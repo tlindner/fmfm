@@ -3,6 +3,8 @@
 
 byte track_buf[6400];
 
+byte *screen_buf = (byte *)0x400;
+
 /* WD179x special write-track bytes */
 #define WT_SYNC   0xF5
 #define WT_CRC    0xF7
@@ -132,7 +134,7 @@ unsigned build_track(byte *buf, int size,
 
 void processError()
 {
-	printf("ERROR: %x\n", x_DCSTA);
+	printf("ERROR: $%02x\n", x_DCSTA);
 	exit(0);
 }
 
@@ -141,33 +143,52 @@ main()
 {
     const unsigned long cookie = x_dskcon_init(x_dskcon_nmiService);
 
-	x_DCOPC = 0;      // 0 = seek to track 0, 2 = read, 3 = write, 4 = format
-	x_DCDRV = 1;      // 0..3
+	x_DCOPC = 0;      // 0 = seek to track 0, 2 = read,
+					  // 3 = write, 4 = format, 5 = read address
+	x_DCDRV = 0;      // 0..3
 	x_DCTRK = 0;     // >= 0
 	x_DCSEC = 0;      // >= 1
 	
-	x_dskcon_processSector();
+	printf("SEEKING TRACK 0... ");
+	x_dskcon_processSector(); /* seek to track 0 */
+	if (x_DCSTA != 0)
+		processError();
 
-	x_DCOPC = 4;      // 2 = read, 3 = write, 4 = format
-	x_DCDRV = 1;      // 0..3
-	x_DCSEC = 0;      // >= 1
+	printf("SUCCESS\n");
+
+	x_DCOPC = 4;      
 	x_DCBPT = track_buf;  // address of sector buffer
 
-	byte i;
-	for(i=0; i<35; i++)
-	{
-		printf("TRACK: %d\n", i);
-		unsigned result;
-		result = build_track(track_buf, 6400, mfm_track_template, /*track*/i, /*side*/0,
-			/*fill*/0x55, /*sectors_per_track*/18, /*sector_size_code*/1);
+	unsigned result;
+	result = build_track(track_buf, 6400, mfm_track_template, /*track*/0, /*side*/0,
+		/*fill*/0x55, /*sectors_per_track*/18, /*sector_size_code*/1);
+
+	x_DCTRK = 0;     // >= 0
+	printf("FORMATTING TRACK... ");
+	x_dskcon_processSector();
 	
-		x_DCTRK = i;     // >= 0
+	if (x_DCSTA != 0)
+		processError();
+
+	printf("SUCCESS\n");
+	
+	cls(255);
+	
+	x_DCOPC = 5;      
+
+	while(1)
+	{
 		x_dskcon_processSector();
-		
 		if (x_DCSTA != 0)
 			processError();
+		
+// 		locate(track_buf[2],0);
+// 		printf("*");
+		screen_buf[track_buf[2]]++;
+// 		printf("%02x %02x %02x %02x %02x %02x\n", track_buf[0], track_buf[1]
+// 			, track_buf[2], track_buf[3], track_buf[4], track_buf[5] );
+	
 	}
-
 	x_dskcon_shutdown(cookie);
 
 	return 0;

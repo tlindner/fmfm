@@ -16,7 +16,7 @@ byte *x_DCBPT; /* DSKCON DATA POINTER */
 byte x_DCSTA;  /* DSKCON STATUS BYTE */
 ;            /* 0x80 Read Sector */
 ;            /* 0xa0 Write Sector */
-;            /* 0xe0 Read Address */
+;            /* 0xc0 Read Address */
 ;            /* 0xf0 Write Track */
 
 byte x_RDYTMR;    /* MOTOR TURN OFF TIMER */
@@ -120,11 +120,10 @@ LD792   BSR     LD7D1   /* WAIT UNTIL NOT BUSY OR TIME OUT */
         CMPB    #3
         LBEQ    x_dskcon_cmd3
         CMPB    #4
+        LBEQ    x_dskcon_cmd4
+        cmpb	#5
         LBNE    LD7A0
-        LBSR    x_dskcon_cmd4
-        BRA     LD7A0
-x_dskcon_cmd3
-        LBSR    LD7FB   /* COMMAND 3: WRITE SECTOR */
+        LBSR    x_dskcon_cmd5
         BRA     LD7A0
 x_dskcon_cmd0
         LBSR    LD7B8   /* COMMAND 0: RESTORE HEAD TO TRACK ZERO */
@@ -144,6 +143,12 @@ LD7A0   PULS    A       /* GET RETRY COUNT */
 LD7B1   LDA     #120    /* 120*1/60 = 2 SECONDS (1/60 SECOND FOR EACH IRQ INTERRUPT) */
         STA     x_RDYTMR  /* WAIT 2 SECONDS BEFORE TURNING OFF MOTOR */
         LBRA    @x_dskcon_end  /* EXIT DSKCON */
+x_dskcon_cmd4
+		LBSR	LD7F6	/* COMMAND 4: Write Track */
+		bra		LD7A0
+x_dskcon_cmd3
+        LBSR    LD7FB   /* COMMAND 3: WRITE SECTOR */
+        BRA     LD7A0
 ;
 ;
 ; RESTORE HEAD TO TRACK 0
@@ -186,7 +191,10 @@ LD7F3   LEAX    -1,X    /* DECREMENT DELAY COUNTER AND */
         BNE     LD7F3   /* BRANCH IF NOT DONE */
         RTS
 ;
-x_dskcon_cmd4
+x_dskcon_cmd5
+		lda		#$c0	/* Read Address */
+		jmp    LD800
+LD7F6
 		lda    #$f0     /* write track */
 		jmp    LD800
 ;

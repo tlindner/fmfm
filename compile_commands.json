@@ -3,6 +3,11 @@
     "directory": "/Users/tlindner/git/tlindner/fmfm",
     "arguments": [
       "clang",
+      "-Wno-incompatible-library-redeclaration",
+      "-U__GNUC__",
+      "-nostdinc",
+      "-D_COCO_BASIC_",
+      "-Dinterrupt=__attribute__((interrupt))",
       "-xc",
       "-I/usr/local/share/cmoc/include",
       "-c",
@@ -14,11 +19,32 @@
     "directory": "/Users/tlindner/git/tlindner/fmfm",
     "arguments": [
       "clang",
+      "-Wno-incompatible-library-redeclaration",
+      "-U__GNUC__",
+      "-nostdinc",
+      "-D_COCO_BASIC_",
+      "-Dinterrupt=__attribute__((interrupt))",
       "-xc",
       "-I/usr/local/share/cmoc/include",
       "-c",
       "x-dskcon-standalone.c"
     ],
     "file": "x-dskcon-standalone.c"
+  },
+  {
+    "directory": "/Users/tlindner/git/tlindner/fmfm",
+    "arguments": [
+      "clang",
+      "-Wno-incompatible-library-redeclaration",
+      "-U__GNUC__",
+      "-nostdinc",
+      "-D_COCO_BASIC_",
+      "-Dinterrupt=__attribute__((interrupt))",
+      "-xc",
+      "-I/usr/local/share/cmoc/include",
+      "-c",
+      "fm-dskcon-standalone.c"
+    ],
+    "file": "fm-dskcon-standalone.c"
   }
 ]
