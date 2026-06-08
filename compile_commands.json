@@ -1,0 +1,24 @@
+[
+  {
+    "directory": "/Users/tlindner/git/tlindner/fmfm",
+    "arguments": [
+      "clang",
+      "-xc",
+      "-I/usr/local/share/cmoc/include",
+      "-c",
+      "fmfm.c"
+    ],
+    "file": "fmfm.c"
+  },
+  {
+    "directory": "/Users/tlindner/git/tlindner/fmfm",
+    "arguments": [
+      "clang",
+      "-xc",
+      "-I/usr/local/share/cmoc/include",
+      "-c",
+      "x-dskcon-standalone.c"
+    ],
+    "file": "x-dskcon-standalone.c"
+  }
+]
