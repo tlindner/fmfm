@@ -72,7 +72,8 @@ static void emit(byte *buf, unsigned *pos, byte b, unsigned n)
 unsigned build_track(byte *buf, int size,
                      const TrackEntry track_template[],
                      byte track, byte side, byte fill,
-                     byte sectors_per_track, byte sector_size_code)
+                     byte sectors_per_track, byte sector_size_code,
+                     byte gap_byte)
 {
     unsigned pos = 0;
     unsigned s, i, b;
@@ -87,7 +88,7 @@ unsigned build_track(byte *buf, int size,
 	}	
 
     /* Gap I (index gap) */
-    emit(buf, &pos, GAP_BYTE, 32);
+    emit(buf, &pos, gap_byte, 32);
 
     for (s = 0; s < sectors_per_track; s++) {
         for (i = 0; i < nentries; i++) {
@@ -127,7 +128,7 @@ unsigned build_track(byte *buf, int size,
 	
     /* Gap IV: fill to end of track */
     while (pos < size)
-        buf[pos++] = GAP_BYTE;
+        buf[pos++] = gap_byte;
 
     return pos;
 }
@@ -160,8 +161,11 @@ main()
 	x_DCBPT = track_buf;  // address of sector buffer
 
 	unsigned result;
-	result = build_track(track_buf, 6400, mfm_track_template, /*track*/0, /*side*/0,
-		/*fill*/0x55, /*sectors_per_track*/18, /*sector_size_code*/1);
+// 	result = build_track(track_buf, 6400, mfm_track_template, /*track*/0, /*side*/0,
+// 		/*fill*/0x55, /*sectors_per_track*/18, /*sector_size_code*/1, GAP_BYTE);
+
+	result = build_track(track_buf, 6400/2, fm_track_template, /*track*/0, /*side*/0,
+		/*fill*/0x55, /*sectors_per_track*/9, /*sector_size_code*/1, 0xff);
 
 	x_DCTRK = 0;     // >= 0
 	printf("FORMATTING TRACK... ");

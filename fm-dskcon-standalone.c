@@ -1,6 +1,8 @@
-/*  dskcon-standalone.c - CoCo 4-drive floppy disk sector read/write support.
+/*  fm-dskcon-standalone.c - CoCo 4-drive floppy disk sector read/write support.
     By Pierre Sarrazin <http://sarrazip.com/>
-
+	
+	This has been converted to work only in single density mode.
+	
     This file is in the public domain, except the parts taken from DECB.
 */
 
@@ -16,7 +18,7 @@ byte *fm_DCBPT; /* DSKCON DATA POINTER */
 byte fm_DCSTA;  /* DSKCON STATUS BYTE */
 ;            /* 0x80 Read Sector */
 ;            /* 0xa0 Write Sector */
-;            /* 0xe0 Read Address */
+;            /* 0xc0 Read Address */
 ;            /* 0xf0 Write Track */
 
 byte fm_RDYTMR;    /* MOTOR TURN OFF TIMER */
@@ -92,9 +94,9 @@ LD765   CLR     fm_RDYTMR  /* RESET DRIVE NOT READY TIMER */
         LDB     fm_DCDRV   /* GET DRIVE NUMBER */
         LEAX    fm_dskcon_driveEnableMasks
         LDA     fm_DRGRAM  /* GET DSKREG IMAGE */
-        ANDA    #$A8    /* KEEP MOTOR STATUS, DOUBLE DENSITY. HALT ENABLE */
+        ANDA    #$08    /* KEEP MOTOR STATUS, single DENSITY. HALT disABLE */
         ORA     B,X     /* 'OR' IN DRIVE SELECT DATA */
-        ORA     #$20    /* 'OR' IN DOUBLE DENSITY */
+        ORA     #$00    /* dont 'OR' IN DOUBLE DENSITY */
         LDB     fm_DCTRK   /* GET TRACK NUMBER */
         CMPB    #22     /* PRECOMPENSATION STARTS AT TRACK 22 */
         BLO     LD77E   /* BRANCH IF LESS THAN 22 */
@@ -120,11 +122,10 @@ LD792   BSR     LD7D1   /* WAIT UNTIL NOT BUSY OR TIME OUT */
         CMPB    #3
         LBEQ    fm_dskcon_cmd3
         CMPB    #4
+        LBEQ    fm_dskcon_cmd4
+        cmpb	#5
         LBNE    LD7A0
-        LBSR    fm_dskcon_cmd4
-        BRA     LD7A0
-fm_dskcon_cmd3
-        LBSR    LD7FB   /* COMMAND 3: WRITE SECTOR */
+        LBSR    fm_dskcon_cmd5
         BRA     LD7A0
 fm_dskcon_cmd0
         LBSR    LD7B8   /* COMMAND 0: RESTORE HEAD TO TRACK ZERO */
@@ -132,7 +133,8 @@ fm_dskcon_cmd0
 fm_dskcon_cmd2
         LBSR    LD7F8   /* COMMAND 2: READ SECTOR */
 ;
-LD7A0   PULS    A       /* GET RETRY COUNT */        LDB     fm_DCSTA   /* GET STATUS */
+LD7A0   PULS    A       /* GET RETRY COUNT */
+        LDB     fm_DCSTA   /* GET STATUS */
         BEQ     LD7B1   /* BRANCH IF NO ERRORS */
         DECA            /* DECREMENT RETRIES COUNTER */
         BEQ     LD7B1   /* BRANCH IF NO RETRIES LEFT */
@@ -143,6 +145,12 @@ LD7A0   PULS    A       /* GET RETRY COUNT */        LDB     fm_DCSTA   /* GET S
 LD7B1   LDA     #120    /* 120*1/60 = 2 SECONDS (1/60 SECOND FOR EACH IRQ INTERRUPT) */
         STA     fm_RDYTMR  /* WAIT 2 SECONDS BEFORE TURNING OFF MOTOR */
         LBRA    @fm_dskcon_end  /* EXIT DSKCON */
+fm_dskcon_cmd4
+		LBSR	LD7F6	/* COMMAND 4: Write Track */
+		bra		LD7A0
+fm_dskcon_cmd3
+        LBSR    LD7FB   /* COMMAND 3: WRITE SECTOR */
+        BRA     LD7A0
 ;
 ;
 ; RESTORE HEAD TO TRACK 0
@@ -185,7 +193,10 @@ LD7F3   LEAX    -1,X    /* DECREMENT DELAY COUNTER AND */
         BNE     LD7F3   /* BRANCH IF NOT DONE */
         RTS
 ;
-fm_dskcon_cmd4
+fm_dskcon_cmd5
+		lda		#$c0	/* Read Address */
+		jmp    LD800
+LD7F6
 		lda    #$f0     /* write track */
 		jmp    LD800
 ;
@@ -246,11 +257,15 @@ LD863   CLR     fm_NMIFLG  /* RESET NMI FLAG */
         ANDCC   #$AF    /* ENABLE FIRQ,IRQ */
         LBRA    LD7DF   /* FORCE INTERRUPT, SET DRIVE NOT READY ERROR */
 ; WRITE A SECTOR
-LD86B   LDB     ,X+         /* GET A BYTE FROM RAM */
-        STB     3+FDCREG    /* SEND IT TO 1793 DATA REGISTER */
-        STA     DSKREG  /* REPROGRAM FDC CONTROL REGISTER */
-        BRA     LD86B   /* SEND MORE DATA */
-; WAIT FOR THE 17933 TO ACKNOWLEDGE READY TO READ DATA
+LD86B	ldb	    ,x+	    /* Load byte from transfer buffer */
+	    stb	    3,u	    /* Write it to FDC */
+wd1	    lda	    ,u	    /* Get status */
+	    rora		    /* Roll busy bit into carry flag */
+	    lbcc	LD88B	/* If not busy, branch to end loop */
+	    rora		    /* Roll data request bit into carry flag */
+	    bcs	    LD86B	/* If data requested, get new byte from transfer buffer */
+	    bra	    wd1     /* Brach to check status again */
+; WAIT FOR THE 1793 TO ACKNOWLEDGE READY TO READ DATA
 LD875   LDB     #$02    /* DRQ MASK BIT */
 LD877   BITB    ,U      /* DOES THE 1793 HAVE A BYTE? (DRQ SET IN STATUS BYTE) */
         BNE     LD881   /* YES, GO READ A SECTOR */
@@ -258,10 +273,14 @@ LD877   BITB    ,U      /* DOES THE 1793 HAVE A BYTE? (DRQ SET IN STATUS BYTE) *
         BNE     LD877   /* KEEP WAITING FOR 1793 DRQ */
         BRA     LD863   /* GENERATE DRIVE NOT READY ERROR */
 ; READ A SECTOR
-LD881   LDB     3+FDCREG    /* GET DATA BYTE FROM 1793 DATA REGISTER */
-        STB     ,X+         /* PUT IT IN RAM */
-        STA     DSKREG  /* REPROGRAM FDC CONTROL REGISTER */
-        BRA     LD881   /* KEEP GETTING DATA */
+LD881	 ldb	 3,u	/* Load byte from FDC */
+	     stb	 ,x+	/* Store byte to transfer buffer */
+rd1	     lda	 ,u	    /* Get status */
+	     rora		    /* Roll busy bit into carry flag */
+	     lbcc	 LD88B	/* If not busy, branch to end loop */
+	     rora		    /* Roll data request bit into carry flag */
+	     bcs	 LD881	/* If data requested, get new byte from transfer buffer */
+	     bra	 rd1	/* Brach to check status again */
 ; BRANCH HERE ON COMPLETION OF SECTOR READ/WRITE
 LD88B   ANDCC   #$AF    /* ENABLE IRQ, FIRO */
         LDA     FDCREG  /* GET STATUS & KEEP WRITE PROTECT, RECORD TYPE/WRITE */
