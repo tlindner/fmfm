@@ -10,6 +10,9 @@ enum
 };
 byte *screen_buf = (byte *)0x400;
 
+byte prog;
+const char *progress = "\\!/-\\!";
+
 /* WD179x special write-track bytes */
 #define WT_SYNC   0xF5
 #define WT_CRC    0xF7
@@ -193,14 +196,24 @@ void fm_readSectorAddress(byte fm_buf[])
 
 	int i;
 	
-	for( i=0; i<100; i++)
+	for( i=0; i<50; i++)
 	{	
 		fm_dskcon_processSector(); /* seek to track 0 */
 		fm_buf[track_buf[2]]++;
-		screen_buf[0]++;
+		if(fm_DCSTA != 0 )
+		{
+			fm_buf[track_buf[2]] = 0xff;
+		}
+
+		locate(0,10);
+		printf("%c",progress[prog++]);
+		if(prog>6) prog = 0;
 	}
 
 	fm_dskcon_shutdown(cookie);
+
+	locate(0,10);
+	printf(" ");
 	
 	return;
 }
@@ -217,15 +230,25 @@ void mfm_readSectorAddress(byte mfm_buf[])
 	x_DCBPT = track_buf;  // address of sector buffer
 	
 	int i;
-	
-	for( i=0; i<100; i++)
+	prog = 0;
+	for( i=0; i<50; i++)
 	{	
 		x_dskcon_processSector(); /* seek to track 0 */
 		mfm_buf[track_buf[2]]++;
-		screen_buf[32]++;
+		if(fm_DCSTA != 0 )
+		{
+			mfm_buf[track_buf[2]] = 0xff;
+		}
+		
+		locate(0,5);
+		printf("%c",progress[prog++]);
+		if(prog>6) prog = 0;
 	}
 
 	x_dskcon_shutdown(cookie);
+
+	locate(0,5);
+	printf(" ");
 	
 	return;
 }
@@ -332,28 +355,75 @@ main()
 	stopFIRQ();
 	enableInterrupts();
 	
-// 	cls(255);
-// 	printf("\n\n\n\n");
+	cls(255);
+	printf("SEEN SECTOR STATISTICS\n");
+	printf("TIMER DELAY: %d\n", 0x0c44);
+	printf("\n");
+	printf("MFM    123456789111111111\n");
+	printf("SEC #           012345678\n");
+	printf("       ------------------\n");
+	printf("COUNT  ------------------\n");
+	printf("\n");
+	printf("FM     12345678911111111\n");
+	printf("SEC #           01234567\n");
+	printf("       -----------------\n");
+	printf("COUNT  -----------------\n");
 	
 	byte mfm_buf[20];
 	byte fm_buf[20];
 	
-	int i;
+	byte i;
 	for(i=0; i<20; i++)
 	{
 		mfm_buf[i]=0;
 		fm_buf[i]=0;
 	}
 	
-	fm_readSectorAddress(fm_buf);
+	mfm_readSectorAddress(fm_buf);
  		
- 	mfm_readSectorAddress(mfm_buf);
+ 	fm_readSectorAddress(mfm_buf);
 
-	for(i=0; i<20; i++)
+	for(i=1; i<20; i++)
 	{
- 		screen_buf[i] = fm_buf[i];
- 		screen_buf[i+32] = mfm_buf[i];
+		locate(i+6,6);
+		if( mfm_buf[i] == 0)
+		{
+		}
+		else if( mfm_buf[i]<10 )
+		{
+			printf("%d", mfm_buf[i]);
+		}
+		else if( mfm_buf[i] == 0xff)
+		{
+			printf("E");
+		}
+		else
+		{
+			printf("+");
+		}
+
+		locate(i+6,11);
+		if( fm_buf[i] == 0)
+		{
+		}
+		else if( fm_buf[i]<10 )
+		{
+			printf("%d", fm_buf[i]);
+		}
+		else if( fm_buf[i] == 0xff)
+		{
+			printf("E");
+		}
+		else
+		{
+			printf("+");
+		}
+
 	}
 
+	printf("\n\nENTER NEW DELAY ? ");
+	char *response = readline();
+	int n = atoi(response);
+	
 	return 0;
 }
