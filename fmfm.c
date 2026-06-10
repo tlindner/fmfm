@@ -1,8 +1,13 @@
 #include "x-dskcon-standalone.h"
+#include "fm-dskcon-standalone.h"
 #include <coco.h>
 
 byte track_buf[6400];
-
+enum
+{
+    DSKREG = 0xFF40,   // DISK CONTROL REGISTER
+    FDCREG = 0xFF48,   // 1793 CONTROL REGISTER
+};
 byte *screen_buf = (byte *)0x400;
 
 /* WD179x special write-track bytes */
@@ -135,18 +140,53 @@ unsigned build_track(byte *buf, int size,
 
 void processError()
 {
-	printf("ERROR: $%02x\n", x_DCSTA);
+	printf("ERROR: $%02x\n", fm_DCSTA);
 	exit(0);
 }
 
-int
-main()
+void formatFM()
+{
+    const unsigned long cookie = fm_dskcon_init(fm_dskcon_nmiService);
+
+	fm_DCOPC = 0;      // 0 = seek to track 0, 2 = read,
+					  // 3 = write, 4 = format, 5 = read address
+	fm_DCDRV = 1;      // 0..3
+	fm_DCTRK = 0;     // >= 0
+	fm_DCSEC = 0;      // >= 1
+	
+	printf("SEEKING TRACK 0... ");
+	fm_dskcon_processSector(); /* seek to track 0 */
+	if (fm_DCSTA != 0)
+		processError();
+
+	printf("SUCCESS\n");
+
+	fm_DCOPC = 4;      
+	fm_DCBPT = track_buf;  // address of sector buffer
+
+	unsigned result;
+	result = build_track(track_buf, 6400/2, fm_track_template, /*track*/0, /*side*/0,
+		/*fill*/0x55, /*sectors_per_track*/18, /*sector_size_code*/0, 0xff);
+
+	fm_DCTRK = 0;     // >= 0
+	printf("FORMATTING FM TRACK... ");
+	fm_dskcon_processSector();
+	
+	if (fm_DCSTA != 0)
+		processError();
+
+	printf("SUCCESS\n");
+	
+	fm_dskcon_shutdown(cookie);
+}
+
+void formatMFM()
 {
     const unsigned long cookie = x_dskcon_init(x_dskcon_nmiService);
 
 	x_DCOPC = 0;      // 0 = seek to track 0, 2 = read,
 					  // 3 = write, 4 = format, 5 = read address
-	x_DCDRV = 0;      // 0..3
+	x_DCDRV = 1;      // 0..3
 	x_DCTRK = 0;     // >= 0
 	x_DCSEC = 0;      // >= 1
 	
@@ -161,14 +201,11 @@ main()
 	x_DCBPT = track_buf;  // address of sector buffer
 
 	unsigned result;
-// 	result = build_track(track_buf, 6400, mfm_track_template, /*track*/0, /*side*/0,
-// 		/*fill*/0x55, /*sectors_per_track*/18, /*sector_size_code*/1, GAP_BYTE);
-
-	result = build_track(track_buf, 6400/2, fm_track_template, /*track*/0, /*side*/0,
-		/*fill*/0x55, /*sectors_per_track*/9, /*sector_size_code*/1, 0xff);
+	result = build_track(track_buf, 6400, mfm_track_template, /*track*/0, /*side*/0,
+		/*fill*/0x55, /*sectors_per_track*/18, /*sector_size_code*/1, GAP_BYTE);
 
 	x_DCTRK = 0;     // >= 0
-	printf("FORMATTING TRACK... ");
+	printf("FORMATTING MFM TRACK... ");
 	x_dskcon_processSector();
 	
 	if (x_DCSTA != 0)
@@ -176,24 +213,92 @@ main()
 
 	printf("SUCCESS\n");
 	
-	cls(255);
-	
-	x_DCOPC = 5;      
+	fm_dskcon_shutdown(cookie);
+}
 
+interrupt void FIRQRoutine(void)
+{
+    asm
+    {
+        lda     #$d8          // Load force interrupt command
+        sta     FDCREG        // store it
+    }
+}
+
+void setGIMETimer(unsigned value)
+{
+    asm
+    {
+        ldd     :value
+        stb     $FF95
+        sta     $FF94
+    }
+}
+
+void setupFIRQ(void)
+{
+	asm
+	{
+		lda #$20 /* timer FIRQ enable */
+		sta $ff93
+		lda #$cc
+		ora #$10
+		sta $ff90
+	}
+}
+
+void stopFIRQ(void)
+{
+	asm
+	{
+		lda #$00
+		sta $ff93
+		lda #$cc
+		sta $ff90
+	}
+}
+
+int
+main()
+{
+	formatMFM();
+
+	disableInterrupts();
+	char *irqVector = * (char **) 0xFFF6;
+	*irqVector = 0x7E;  // extended JMP instruction
+	* (void **) (irqVector + 1) = (void *) FIRQRoutine;
+	setGIMETimer(0);
+	setupFIRQ();
+	enableInterrupts();
+
+	formatFM();
+
+	disableInterrupts();
+	stopFIRQ();
+	enableInterrupts();
+	
+// 	cls(255);
+	
 	while(1)
 	{
-		x_dskcon_processSector();
-		if (x_DCSTA != 0)
-			processError();
+		screen_buf[2]++;
+	}
+	
+// 	fm_DCOPC = 5;      
+
+// 	while(1)
+// 	{
+// 		fm_dskcon_processSector();
+// 		if (fm_DCSTA != 0)
+// 			processError();
 		
 // 		locate(track_buf[2],0);
 // 		printf("*");
-		screen_buf[track_buf[2]]++;
+// 		screen_buf[track_buf[2]]++;
 // 		printf("%02x %02x %02x %02x %02x %02x\n", track_buf[0], track_buf[1]
 // 			, track_buf[2], track_buf[3], track_buf[4], track_buf[5] );
 	
-	}
-	x_dskcon_shutdown(cookie);
+// 	}
 
 	return 0;
 }

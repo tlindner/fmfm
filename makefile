@@ -8,9 +8,13 @@ DSK     = fmfm.dsk
 
 SRCS    = fmfm.c x-dskcon-standalone.c fm-dskcon-standalone.c
 OBJS    = $(SRCS:.c=.o)
+PSRC    = $(SRCS:.c=.s)
+LSTS    = $(SRCS:.c=.lst)
+MAPS    = $(SRCS:.c=.map)
+LINK    = $(SRCS:.c=.link)
 
 # Add CMOC options here if needed
-CFLAGS  =
+CFLAGS  = -i
 
 all: $(DSK)
 
@@ -28,6 +32,6 @@ $(DSK): $(TARGET)
 	$(DECB) copy -2b $(TARGET) $(DSK),FMFM.BIN
 
 clean:
-	rm -f $(OBJS) $(TARGET) $(DSK)
+	rm -f $(OBJS) $(TARGET) $(DSK) $(PSRC) $(LSTS) $(MAPS) $(LINK)
 
 .PHONY: all clean

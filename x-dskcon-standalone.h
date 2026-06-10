@@ -26,13 +26,6 @@ extern void *x_DNMIVC;   /* NMI VECTOR: WHERE TO JUMP FOLLOWING AN NMI */
 extern unsigned char x_dskcon_driveEnableMasks[4];
 
 
-enum
-{
-    DSKREG = 0xFF40,   // DISK CONTROL REGISTER
-    FDCREG = 0xFF48,   // 1793 CONTROL REGISTER
-};
-
-
 // Type used by x_dskcon_init().
 //
 typedef interrupt void (*x_dskcon_NmiServiceFunctionPointer)();

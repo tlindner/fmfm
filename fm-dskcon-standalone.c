@@ -8,6 +8,12 @@
 
 #include "fm-dskcon-standalone.h"
 
+enum
+{
+    DSKREG = 0xFF40,   // DISK CONTROL REGISTER
+    FDCREG = 0xFF48,   // 1793 CONTROL REGISTER
+};
+
 #include <coco.h>
 
 byte fm_DCOPC;  /* DSKCON OPERATION CODE 0-3 */
@@ -240,11 +246,29 @@ LD82C   LDA     fm_DCSEC       /* GET SECTOR NUMBER DESIRED */
         LDY     #0      /* ZERO OUT Y - TIMEOUT INITIAL VALUE */
         LDU     #FDCREG /* U POINTS TO 1793 INTERFACE REGISTERS */
         COM     fm_NMIFLG  /* NMI FLAG = $FF: ENABLE NMI VECTOR */
-        ORCC    #$50    /* DISABLE FIRQ,IRQ */
-        STB     FDCREG  /* SEND READ/WRITE COMMAND TO 1793: SINGLE RECORD, COMPARE */
+        cmpb #$f0     /* check for write track */
+        bne LD82E
+; Special write track code to implement an INTRQ after writing a half track
+; 1. Wait until index pulse.
+; 2. Wait for half track rotation
+; 3. Arm timer to fire after whole track rotation.
+LD82I   LDB     ,U              /* READ FDC STATUS */
+        BITB    #$02            /* INDEX PULSE HIGH? */
+        BEQ     LD82I           /* NO, KEEP POLLING */
+        LDY     #$26D8          /* LOAD HALF-ROTATION COUNT */
+LD82D   LEAY    -1,Y            /* DECREMENT COUNTER (6 CYCLES) */
+        BNE     LD82D           /* LOOP UNTIL ZERO (3 CYCLES) */
+        ORCC    #$10            /* DISABLE IRQ ONLY */
+        pshs d
+        ldd     #$0AED          /* FULL ROTATION TICK COUNT */
+        stb     $FF95           /* WRITE TO GIME TIMER: STARTS COUNTING NOW */
+        sta     $FF94           /* WRITE TO GIME TIMER: STARTS COUNTING NOW */
+        puls d
+        bra     LD82F    /* Go continue */  
+LD82E   ORCC    #$50    /* DISABLE FIRQ,IRQ */
+LD82F   STB     FDCREG  /* SEND READ/WRITE COMMAND TO 1793: SINGLE RECORD, COMPARE */
         EXG     A,A     /* FOR SIDE 0, NO 15 MS DELAY, DISABLE SIDE SELECT */
         EXG     A,A     /* COMPARE, WRITE DATA ADDRESS MARK (FB) - WAIT FOR STATUS */
-;        CMPB    #$80    /* WAS THIS A READ? */
 		BITB    #$20    /* WAS THIS A READ? */
         BEQ     LD875   /* IF SO, GO LOOK FOR DATA */
 ; WAIT FOR THE 1793 TO ACKNOWLEDGE READY TO WRITE DATA
