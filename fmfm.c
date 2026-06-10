@@ -205,14 +205,14 @@ void fm_readSectorAddress(byte fm_buf[])
 			fm_buf[track_buf[2]] = 0xff;
 		}
 
-		locate(0,10);
+		locate(0,11);
 		printf("%c",progress[prog++]);
 		if(prog>6) prog = 0;
 	}
 
 	fm_dskcon_shutdown(cookie);
 
-	locate(0,10);
+	locate(0,11);
 	printf(" ");
 	
 	return;
@@ -250,6 +250,74 @@ void mfm_readSectorAddress(byte mfm_buf[])
 	locate(0,5);
 	printf(" ");
 	
+	return;
+}
+
+void mfm_readSector(byte mfm_buf[])
+{
+    const unsigned long cookie = x_dskcon_init(x_dskcon_nmiService);
+
+	x_DCOPC = 2;      // 0 = seek to track 0, 2 = read,
+					  // 3 = write, 4 = format, 5 = read address
+	x_DCDRV = 1;      // 0..3
+	x_DCTRK = 0;     // >= 0
+	x_DCBPT = track_buf;  // address of sector buffer
+	
+	byte i;
+	for (i=0; i<20; i++)
+	{
+		if (mfm_buf[i]>0)
+		{
+			x_DCSEC = i;      // >= 1
+			x_dskcon_processSector();
+			locate(i+6,7);
+			if(fm_DCSTA != 0 )
+			{
+				printf("E");
+			}
+			else
+			{
+				printf(".");
+			}
+		}
+	}
+
+	x_dskcon_shutdown(cookie);
+
+	return;
+}
+
+void fm_readSector(byte fm_buf[])
+{
+    const unsigned long cookie = fm_dskcon_init(fm_dskcon_nmiService);
+
+	fm_DCOPC = 2;      // 0 = seek to track 0, 2 = read,
+					  // 3 = write, 4 = format, 5 = read address
+	fm_DCDRV = 1;      // 0..3
+	fm_DCTRK = 0;     // >= 0
+	fm_DCBPT = track_buf;  // address of sector buffer
+	
+	byte i;
+	for (i=0; i<20; i++)
+	{
+		if (fm_buf[i]>0)
+		{
+			fm_DCSEC = i;      // >= 1
+			fm_dskcon_processSector();
+			locate(i+6,13);
+			if(fm_DCSTA != 0 )
+			{
+				printf("E");
+			}
+			else
+			{
+				printf(".");
+			}
+		}
+	}
+
+	fm_dskcon_shutdown(cookie);
+
 	return;
 }
 
@@ -356,18 +424,20 @@ main()
 	enableInterrupts();
 	
 	cls(255);
-	printf("SEEN SECTOR STATISTICS\n");
+	printf("TRACK 0 SEEN SECTOR STATISTICS\n");
 	printf("TIMER DELAY: %d\n", 0x0c44);
 	printf("\n");
 	printf("MFM    123456789111111111\n");
 	printf("SEC #           012345678\n");
 	printf("       ------------------\n");
 	printf("COUNT  ------------------\n");
+	printf("DATA   ------------------\n");
 	printf("\n");
-	printf("FM     12345678911111111\n");
-	printf("SEC #           01234567\n");
-	printf("       -----------------\n");
-	printf("COUNT  -----------------\n");
+	printf("FM     123456789111111111\n");
+	printf("SEC #           012345678\n");
+	printf("       ------------------\n");
+	printf("COUNT  ------------------\n");
+	printf("DATA   ------------------\n");
 	
 	byte mfm_buf[20];
 	byte fm_buf[20];
@@ -379,9 +449,7 @@ main()
 		fm_buf[i]=0;
 	}
 	
-	mfm_readSectorAddress(fm_buf);
- 		
- 	fm_readSectorAddress(mfm_buf);
+	mfm_readSectorAddress(mfm_buf);
 
 	for(i=1; i<20; i++)
 	{
@@ -401,8 +469,15 @@ main()
 		{
 			printf("+");
 		}
+ 	}
 
-		locate(i+6,11);
+	mfm_readSector(mfm_buf);
+ 	
+ 	fm_readSectorAddress(fm_buf);
+
+	for(i=1; i<20; i++)
+	{
+		locate(i+6,12);
 		if( fm_buf[i] == 0)
 		{
 		}
@@ -418,10 +493,12 @@ main()
 		{
 			printf("+");
 		}
-
 	}
 
-	printf("\n\nENTER NEW DELAY ? ");
+	fm_readSector(fm_buf);
+
+	locate(0,15);
+	printf("ENTER NEW DELAY? ");
 	char *response = readline();
 	int n = atoi(response);
 	
