@@ -166,7 +166,7 @@ void formatFM()
 
 	unsigned result;
 	result = build_track(track_buf, 6400/2, fm_track_template, /*track*/0, /*side*/0,
-		/*fill*/0x55, /*sectors_per_track*/18, /*sector_size_code*/0, 0xff);
+		/*fill*/0x55, /*sectors_per_track*/17, /*sector_size_code*/0, 0xff);
 
 	fm_DCTRK = 0;     // >= 0
 	printf("FORMATTING FM TRACK... ");
@@ -178,6 +178,56 @@ void formatFM()
 	printf("SUCCESS\n");
 	
 	fm_dskcon_shutdown(cookie);
+}
+
+void fm_readSectorAddress(byte fm_buf[])
+{
+    const unsigned long cookie = fm_dskcon_init(fm_dskcon_nmiService);
+
+	fm_DCOPC = 5;      // 0 = seek to track 0, 2 = read,
+					  // 3 = write, 4 = format, 5 = read address
+	fm_DCDRV = 1;      // 0..3
+	fm_DCTRK = 0;     // >= 0
+	fm_DCSEC = 0;      // >= 1
+	fm_DCBPT = track_buf;  // address of sector buffer
+
+	int i;
+	
+	for( i=0; i<100; i++)
+	{	
+		fm_dskcon_processSector(); /* seek to track 0 */
+		fm_buf[track_buf[2]]++;
+		screen_buf[0]++;
+	}
+
+	fm_dskcon_shutdown(cookie);
+	
+	return;
+}
+
+void mfm_readSectorAddress(byte mfm_buf[])
+{
+    const unsigned long cookie = x_dskcon_init(x_dskcon_nmiService);
+
+	x_DCOPC = 5;      // 0 = seek to track 0, 2 = read,
+					  // 3 = write, 4 = format, 5 = read address
+	x_DCDRV = 1;      // 0..3
+	x_DCTRK = 0;     // >= 0
+	x_DCSEC = 0;      // >= 1
+	x_DCBPT = track_buf;  // address of sector buffer
+	
+	int i;
+	
+	for( i=0; i<100; i++)
+	{	
+		x_dskcon_processSector(); /* seek to track 0 */
+		mfm_buf[track_buf[2]]++;
+		screen_buf[32]++;
+	}
+
+	x_dskcon_shutdown(cookie);
+	
+	return;
 }
 
 void formatMFM()
@@ -220,8 +270,11 @@ interrupt void FIRQRoutine(void)
 {
     asm
     {
+    	
         lda     #$d8          // Load force interrupt command
         sta     FDCREG        // store it
+        clr		$ff93         // stop timer
+        inc     $400+32-1
     }
 }
 
@@ -244,6 +297,7 @@ void setupFIRQ(void)
 		lda #$cc
 		ora #$10
 		sta $ff90
+		lda $ff93 /* clear pending */
 	}
 }
 
@@ -255,6 +309,7 @@ void stopFIRQ(void)
 		sta $ff93
 		lda #$cc
 		sta $ff90
+		lda $ff93 /* clear pending */
 	}
 }
 
@@ -270,7 +325,7 @@ main()
 	setGIMETimer(0);
 	setupFIRQ();
 	enableInterrupts();
-
+	
 	formatFM();
 
 	disableInterrupts();
@@ -278,27 +333,27 @@ main()
 	enableInterrupts();
 	
 // 	cls(255);
+// 	printf("\n\n\n\n");
 	
-	while(1)
+	byte mfm_buf[20];
+	byte fm_buf[20];
+	
+	int i;
+	for(i=0; i<20; i++)
 	{
-		screen_buf[2]++;
+		mfm_buf[i]=0;
+		fm_buf[i]=0;
 	}
 	
-// 	fm_DCOPC = 5;      
+	fm_readSectorAddress(fm_buf);
+ 		
+ 	mfm_readSectorAddress(mfm_buf);
 
-// 	while(1)
-// 	{
-// 		fm_dskcon_processSector();
-// 		if (fm_DCSTA != 0)
-// 			processError();
-		
-// 		locate(track_buf[2],0);
-// 		printf("*");
-// 		screen_buf[track_buf[2]]++;
-// 		printf("%02x %02x %02x %02x %02x %02x\n", track_buf[0], track_buf[1]
-// 			, track_buf[2], track_buf[3], track_buf[4], track_buf[5] );
-	
-// 	}
+	for(i=0; i<20; i++)
+	{
+ 		screen_buf[i] = fm_buf[i];
+ 		screen_buf[i+32] = mfm_buf[i];
+	}
 
 	return 0;
 }

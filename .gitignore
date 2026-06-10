@@ -1,0 +1,18 @@
+# Generated assembly and object files
+*.o
+*.s
+
+# CMOC listings and linker outputs
+*.lst
+*.map
+*.link
+
+# Final binaries
+fmfm
+fmfm.dsk
+
+# Generated build metadata
+compile_commands.json
+
+# macOS
+.DS_Store

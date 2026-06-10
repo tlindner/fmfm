@@ -252,18 +252,18 @@ LD82C   LDA     fm_DCSEC       /* GET SECTOR NUMBER DESIRED */
 ; 1. Wait until index pulse.
 ; 2. Wait for half track rotation
 ; 3. Arm timer to fire after whole track rotation.
+        ORCC    #$10            /* DISABLE IRQ ONLY */
 LD82I   LDB     ,U              /* READ FDC STATUS */
         BITB    #$02            /* INDEX PULSE HIGH? */
         BEQ     LD82I           /* NO, KEEP POLLING */
-        LDY     #$26D8          /* LOAD HALF-ROTATION COUNT */
-LD82D   LEAY    -1,Y            /* DECREMENT COUNTER (6 CYCLES) */
+        LDY     #$2BB2          /* LOAD HALF-ROTATION COUNT */
+LD82D   LEAY    -1,Y            /* DECREMENT COUNTER (5 CYCLES) */
         BNE     LD82D           /* LOOP UNTIL ZERO (3 CYCLES) */
-        ORCC    #$10            /* DISABLE IRQ ONLY */
-        pshs d
-        ldd     #$0AED          /* FULL ROTATION TICK COUNT */
-        stb     $FF95           /* WRITE TO GIME TIMER: STARTS COUNTING NOW */
-        sta     $FF94           /* WRITE TO GIME TIMER: STARTS COUNTING NOW */
-        puls d
+        ldb     #$44
+        stb     $FF95           /* WRITE TO GIME TIMER */
+        ldb     #$0C          /* FULL ROTATION TICK COUNT */
+        stb     $FF94           /* WRITE TO GIME TIMER: STARTS COUNTING NOW */
+        ldb     #$f0
         bra     LD82F    /* Go continue */  
 LD82E   ORCC    #$50    /* DISABLE FIRQ,IRQ */
 LD82F   STB     FDCREG  /* SEND READ/WRITE COMMAND TO 1793: SINGLE RECORD, COMPARE */
