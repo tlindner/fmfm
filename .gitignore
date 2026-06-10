@@ -11,8 +11,5 @@
 fmfm
 fmfm.dsk
 
-# Generated build metadata
-compile_commands.json
-
 # macOS
 .DS_Store
