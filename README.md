@@ -13,9 +13,9 @@ and no missing sectors.
 
 ## Background
 
-Standard CoCo floppy tracks use a single encoding — either FM (single density)
-or MFM (double density) — for the entire track. FMFM writes a track with 18 MFM
-sectors in one half and 17 FM sectors in the other, stopping the FM write halfway
+Standard CoCo floppy tracks use a single encoding, MFM (double density), for the
+entire track. FMFM writes a whole track with 18 MFM
+sectors and 17 FM sectors in the other, stopping the FM write halfway
 through. This is believed to be the first use of a stock WD179x floppy disk
 controller to produce a mixed-density track in this manner.
 
@@ -42,7 +42,7 @@ Two consecutive Write Track commands are issued:
 
 2. **FM write** — Polled. The CPU actively polls the WD179x for DRQ between bytes.
    A GIME timer interrupt fires mid-track and issues a Force Interrupt command to
-   the WD179x, aborting the write after approximately 9 FM sectors.
+   the WD179x, aborting the write.
 
 The timer delay value controls where in the FM region the write is aborted.
 
@@ -79,9 +79,11 @@ Each sector position shows one of three states:
 
 | Character | Meaning |
 |-----------|---------|
-| `-`       | Not attempted (outside scan window) |
-| `.`       | Address found, data read, CRC clean |
-| `E`       | Address found, data CRC error |
+| `digit`   | Address found n times |
+| `+`       | Address found more than 10 times |
+| `-`       | Address not found |
+| `.`       | Data read, CRC clean |
+| `E`       | Address / data found, CRC error |
 
 A digit in the COUNT row shows how many times that sector's address mark was seen
 on this pass (capped at 9, shown as `+` for 10 or more).
@@ -111,14 +113,12 @@ The display, timing logic, and read verification loop are in C.
   write phase.
 - Force Interrupt (WD179x command `0xD8`) is used to cleanly terminate the FM
   write. The chip returns to idle and the read phase begins immediately.
-- Sector display uses a 256-entry lookup table to map raw count/status bytes to
-  display characters in O(1) with no branching.
 
 ## Requirements
 
 - Color Computer 3
 - WD179x-based floppy controller (COCO FDC or compatible)
-- Single- or double-density capable floppy drive
+- Single- and double-density capable floppy drive
 - Blank or expendable floppy disk (track 0 will be overwritten)
 
 ## Status
