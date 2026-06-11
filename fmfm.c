@@ -212,6 +212,15 @@ void fm_readSectorAddress(byte fm_buf[])
 		locate(0,11);
 		printf("%c",progress[prog++]);
 		if(prog>6) prog = 0;
+		
+		/* bail early if nothing seen after 2 attempts */
+		if( i == 2 )
+		{
+			byte j, found = 0;
+			for( j=1; j<20; j++ )
+				if( fm_buf[j] ) found = 1;
+			if( !found ) break;
+		}
 	}
 
 	fm_dskcon_shutdown(cookie);
@@ -247,6 +256,15 @@ void mfm_readSectorAddress(byte mfm_buf[])
 		locate(0,5);
 		printf("%c",progress[prog++]);
 		if(prog>6) prog = 0;
+
+		/* bail early if nothing seen after 2 attempts */
+		if( i == 2 )
+		{
+			byte j, found = 0;
+			for( j=1; j<20; j++ )
+				if( mfm_buf[j] ) found = 1;
+			if( !found ) break;
+		}
 	}
 
 	x_dskcon_shutdown(cookie);
@@ -424,13 +442,27 @@ void stopMotor(void)
 int
 main()
 {
-	re_ask:
+	re_ask_drive:
 	printf("DRIVE NUMBER FOR TRACK 0\nTESTING? ");
 	char *response = readline();
 	int n = atoi(response);
 	driveNum = (byte)n;
 	
-	if (driveNum < 0 || driveNum>3) goto re_ask;
+	if (driveNum < 0 || driveNum>3) goto re_ask_drive;
+
+	re_ask_delay:
+	printf("TIMER DELAY: %d\n", ((unsigned)fm_timer_hi << 8) | fm_timer_lo);
+	printf("ENTER NEW DELAY? ");
+	response = readline();
+	n = atoi(response);
+	
+	if (n<0 || n>4095) goto re_ask_delay;
+	
+	if (n != 0)
+	{
+		fm_timer_hi = (byte)(n >> 8);
+		fm_timer_lo = (byte)n;
+	}
 	
 	while(1)
 	{
@@ -525,12 +557,14 @@ main()
 		fm_readSector(fm_buf);
 	
 		locate(0,15);
-		printf("ENTER NEW DELAY? ");
+		re_ask_delay2:
+		printf("ENTER DELAY? ");
 		response = readline();
 		n = atoi(response);
 		
 		if (n==0) break;
-		
+		if (n<0 || n>4095) goto re_ask_delay2;
+
 		fm_timer_hi = (byte)(n >> 8);
 		fm_timer_lo = (byte)n;
 	}
