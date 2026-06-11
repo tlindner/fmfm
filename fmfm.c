@@ -12,6 +12,10 @@ byte *screen_buf = (byte *)0x400;
 
 byte prog;
 const char *progress = "\\!/-\\!";
+byte driveNum;
+
+byte fm_timer_hi = 0x0C;
+byte fm_timer_lo = 0x44;
 
 /* WD179x special write-track bytes */
 #define WT_SYNC   0xF5
@@ -153,7 +157,7 @@ void formatFM()
 
 	fm_DCOPC = 0;      // 0 = seek to track 0, 2 = read,
 					  // 3 = write, 4 = format, 5 = read address
-	fm_DCDRV = 1;      // 0..3
+	fm_DCDRV = driveNum;      // 0..3
 	fm_DCTRK = 0;     // >= 0
 	fm_DCSEC = 0;      // >= 1
 	
@@ -189,7 +193,7 @@ void fm_readSectorAddress(byte fm_buf[])
 
 	fm_DCOPC = 5;      // 0 = seek to track 0, 2 = read,
 					  // 3 = write, 4 = format, 5 = read address
-	fm_DCDRV = 1;      // 0..3
+	fm_DCDRV = driveNum;      // 0..3
 	fm_DCTRK = 0;     // >= 0
 	fm_DCSEC = 0;      // >= 1
 	fm_DCBPT = track_buf;  // address of sector buffer
@@ -224,7 +228,7 @@ void mfm_readSectorAddress(byte mfm_buf[])
 
 	x_DCOPC = 5;      // 0 = seek to track 0, 2 = read,
 					  // 3 = write, 4 = format, 5 = read address
-	x_DCDRV = 1;      // 0..3
+	x_DCDRV = driveNum;      // 0..3
 	x_DCTRK = 0;     // >= 0
 	x_DCSEC = 0;      // >= 1
 	x_DCBPT = track_buf;  // address of sector buffer
@@ -259,7 +263,7 @@ void mfm_readSector(byte mfm_buf[])
 
 	x_DCOPC = 2;      // 0 = seek to track 0, 2 = read,
 					  // 3 = write, 4 = format, 5 = read address
-	x_DCDRV = 1;      // 0..3
+	x_DCDRV = driveNum;      // 0..3
 	x_DCTRK = 0;     // >= 0
 	x_DCBPT = track_buf;  // address of sector buffer
 	
@@ -293,7 +297,7 @@ void fm_readSector(byte fm_buf[])
 
 	fm_DCOPC = 2;      // 0 = seek to track 0, 2 = read,
 					  // 3 = write, 4 = format, 5 = read address
-	fm_DCDRV = 1;      // 0..3
+	fm_DCDRV = driveNum;      // 0..3
 	fm_DCTRK = 0;     // >= 0
 	fm_DCBPT = track_buf;  // address of sector buffer
 	
@@ -327,7 +331,7 @@ void formatMFM()
 
 	x_DCOPC = 0;      // 0 = seek to track 0, 2 = read,
 					  // 3 = write, 4 = format, 5 = read address
-	x_DCDRV = 1;      // 0..3
+	x_DCDRV = driveNum;      // 0..3
 	x_DCTRK = 0;     // >= 0
 	x_DCSEC = 0;      // >= 1
 	
@@ -365,7 +369,6 @@ interrupt void FIRQRoutine(void)
         lda     #$d8          // Load force interrupt command
         sta     FDCREG        // store it
         clr		$ff93         // stop timer
-        inc     $400+32-1
     }
 }
 
@@ -404,103 +407,135 @@ void stopFIRQ(void)
 	}
 }
 
+void stopMotor(void)
+{
+	asm
+	{
+		lda     fm_DRGRAM
+		anda    #$B0        ; turn off motors and drive selects
+		sta     fm_DRGRAM
+		lda     x_DRGRAM
+		anda    #$B0        ; turn off motors and drive selects
+		sta     x_DRGRAM
+		sta     DSKREG
+	}
+}
+
 int
 main()
 {
-	formatMFM();
-
-	disableInterrupts();
-	char *irqVector = * (char **) 0xFFF6;
-	*irqVector = 0x7E;  // extended JMP instruction
-	* (void **) (irqVector + 1) = (void *) FIRQRoutine;
-	setGIMETimer(0);
-	setupFIRQ();
-	enableInterrupts();
-	
-	formatFM();
-
-	disableInterrupts();
-	stopFIRQ();
-	enableInterrupts();
-	
-	cls(255);
-	printf("TRACK 0 SEEN SECTOR STATISTICS\n");
-	printf("TIMER DELAY: %d\n", 0x0c44);
-	printf("\n");
-	printf("MFM    123456789111111111\n");
-	printf("SEC #           012345678\n");
-	printf("       ------------------\n");
-	printf("COUNT  ------------------\n");
-	printf("DATA   ------------------\n");
-	printf("\n");
-	printf("FM     123456789111111111\n");
-	printf("SEC #           012345678\n");
-	printf("       ------------------\n");
-	printf("COUNT  ------------------\n");
-	printf("DATA   ------------------\n");
-	
-	byte mfm_buf[20];
-	byte fm_buf[20];
-	
-	byte i;
-	for(i=0; i<20; i++)
-	{
-		mfm_buf[i]=0;
-		fm_buf[i]=0;
-	}
-	
-	mfm_readSectorAddress(mfm_buf);
-
-	for(i=1; i<20; i++)
-	{
-		locate(i+6,6);
-		if( mfm_buf[i] == 0)
-		{
-		}
-		else if( mfm_buf[i]<10 )
-		{
-			printf("%d", mfm_buf[i]);
-		}
-		else if( mfm_buf[i] == 0xff)
-		{
-			printf("E");
-		}
-		else
-		{
-			printf("+");
-		}
- 	}
-
-	mfm_readSector(mfm_buf);
- 	
- 	fm_readSectorAddress(fm_buf);
-
-	for(i=1; i<20; i++)
-	{
-		locate(i+6,12);
-		if( fm_buf[i] == 0)
-		{
-		}
-		else if( fm_buf[i]<10 )
-		{
-			printf("%d", fm_buf[i]);
-		}
-		else if( fm_buf[i] == 0xff)
-		{
-			printf("E");
-		}
-		else
-		{
-			printf("+");
-		}
-	}
-
-	fm_readSector(fm_buf);
-
-	locate(0,15);
-	printf("ENTER NEW DELAY? ");
+	re_ask:
+	printf("DRIVE NUMBER FOR TRACK 0\nTESTING? ");
 	char *response = readline();
 	int n = atoi(response);
+	driveNum = (byte)n;
+	
+	if (driveNum < 0 || driveNum>3) goto re_ask;
+	
+	while(1)
+	{
+		formatMFM();
+	
+		disableInterrupts();
+		char *irqVector = * (char **) 0xFFF6;
+		*irqVector = 0x7E;  // extended JMP instruction
+		* (void **) (irqVector + 1) = (void *) FIRQRoutine;
+		setGIMETimer(0);
+		setupFIRQ();
+		enableInterrupts();
+		
+		formatFM();
+	
+		disableInterrupts();
+		stopFIRQ();
+		enableInterrupts();
+		
+		cls(255);
+		printf("TRACK 0 SEEN SECTOR STATISTICS\n");
+		printf("TIMER DELAY: %d\n", ((unsigned)fm_timer_hi << 8) | fm_timer_lo);
+		printf("\n");
+		printf("MFM    123456789111111111\n");
+		printf("SEC #           012345678\n");
+		printf("       ------------------\n");
+		printf("COUNT  ------------------\n");
+		printf("DATA   ------------------\n");
+		printf("\n");
+		printf("FM     123456789111111111\n");
+		printf("SEC #           012345678\n");
+		printf("       ------------------\n");
+		printf("COUNT  ------------------\n");
+		printf("DATA   ------------------\n");
+		
+		byte mfm_buf[20];
+		byte fm_buf[20];
+		
+		byte i;
+		for(i=0; i<20; i++)
+		{
+			mfm_buf[i]=0;
+			fm_buf[i]=0;
+		}
+		
+		mfm_readSectorAddress(mfm_buf);
+	
+		for(i=1; i<20; i++)
+		{
+			locate(i+6,6);
+			if( mfm_buf[i] == 0)
+			{
+			}
+			else if( mfm_buf[i]<10 )
+			{
+				printf("%d", mfm_buf[i]);
+			}
+			else if( mfm_buf[i] == 0xff)
+			{
+				printf("E");
+			}
+			else
+			{
+				printf("+");
+			}
+		}
+	
+		mfm_readSector(mfm_buf);
+		
+		fm_readSectorAddress(fm_buf);
+	
+		for(i=1; i<20; i++)
+		{
+			locate(i+6,12);
+			if( fm_buf[i] == 0)
+			{
+			}
+			else if( fm_buf[i]<10 )
+			{
+				printf("%d", fm_buf[i]);
+			}
+			else if( fm_buf[i] == 0xff)
+			{
+				printf("E");
+			}
+			else
+			{
+				printf("+");
+			}
+		}
+	
+		fm_readSector(fm_buf);
+	
+		locate(0,15);
+		printf("ENTER NEW DELAY? ");
+		response = readline();
+		n = atoi(response);
+		
+		if (n==0) break;
+		
+		fm_timer_hi = (byte)(n >> 8);
+		fm_timer_lo = (byte)n;
+	}
+	
+	stopMotor();
 	
 	return 0;
 }

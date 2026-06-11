@@ -8,6 +8,9 @@
 
 #include "fm-dskcon-standalone.h"
 
+extern unsigned char fm_timer_hi;
+extern unsigned char fm_timer_lo;
+
 enum
 {
     DSKREG = 0xFF40,   // DISK CONTROL REGISTER
@@ -259,9 +262,9 @@ LD82I   LDB     ,U              /* READ FDC STATUS */
         LDY     #$2BB2          /* LOAD HALF-ROTATION COUNT */
 LD82D   LEAY    -1,Y            /* DECREMENT COUNTER (5 CYCLES) */
         BNE     LD82D           /* LOOP UNTIL ZERO (3 CYCLES) */
-        ldb     #$44
+        ldb     fm_timer_lo
         stb     $FF95           /* WRITE TO GIME TIMER */
-        ldb     #$0C          /* FULL ROTATION TICK COUNT */
+        ldb     fm_timer_hi          /* FULL ROTATION TICK COUNT */
         stb     $FF94           /* WRITE TO GIME TIMER: STARTS COUNTING NOW */
         ldb     #$f0
         bra     LD82F    /* Go continue */  
