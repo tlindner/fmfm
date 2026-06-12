@@ -113,14 +113,16 @@ LD77E   TFR     A,B     /* SAVE PARTIAL IMAGE IN ACCB */
         BNE     LD792   /* DON'T WAIT FOR IT TO COME UP TO SPEED IF ALREADY ON */
         LBSR    LA7D1   /* WAIT A WHILE */
         LBSR    LA7D1   /* WAIT SOME MORE FOR MOTOR TO COME UP TO SPEED */
-LD792   BSR     LD7D1   /* WAIT UNTIL NOT BUSY OR TIME OUT */
+LD792   LBSR     LD7D1   /* WAIT UNTIL NOT BUSY OR TIME OUT */
         BNE     LD7A0   /* BRANCH IF TIMED OUT (DOOR OPEN. NO DISK, NO POWER. ETC.) */
         CLR     x_DCSTA   /* CLEAR STATUS REGISTER */
 ;
         LDB     x_DCOPC   /* GET COMMAND */
 ;
         /* JUMP TO COMMAND WITHOUT JUMP TABLE AS IN DISK BASIC (FOR RELOCATABILITY). */
-        LBEQ    x_dskcon_cmd0
+		LBEQ    x_dskcon_cmd0
+        CMPB    #1
+        LBEQ    x_dskcon_cmd1
         CMPB    #2
         LBEQ    x_dskcon_cmd2
         CMPB    #3
@@ -145,7 +147,7 @@ LD7A0   PULS    A       /* GET RETRY COUNT */
         PSHS    A       /* SAVE RETRY COUNT ON STACK */
         BSR     LD7B8   /* RESTORE HEAD TO TRACK 0 */
         BNE     LD7A0   /* BRANCH IF SEEK ERROR */
-        BRA     LD765   /* GO TRY COMMAND AGAIN IF NO ERROR */
+        LBRA     LD765   /* GO TRY COMMAND AGAIN IF NO ERROR */
 LD7B1   LDA     #120    /* 120*1/60 = 2 SECONDS (1/60 SECOND FOR EACH IRQ INTERRUPT) */
         STA     x_RDYTMR  /* WAIT 2 SECONDS BEFORE TURNING OFF MOTOR */
         LBRA    @x_dskcon_end  /* EXIT DSKCON */
@@ -170,7 +172,16 @@ LD7B8   LEAX    x_DR0TRK  /* POINT TO TRACK TABLE */
         ANDA    #$10    /* 1793 STATUS : KEEP ONLY SEEK ERROR */
         STA     x_DCSTA   /* SAVE IN DSKCON STATUS */
 LD7D0   RTS
-;
+x_dskcon_cmd1
+        LDA     #$13    /* STEP: UPDATE TRACK REGISTER, VERIFY OFF, 30ms rate */
+        STA     FDCREG
+        EXG     A,A
+        EXG     A,A     /* WAIT FOR 1793 TO RESPOND TO COMMAND */
+        BSR     LD7D1   /* WAIT TILL DRIVE NOT BUSY (WITH TIMEOUT) */
+        BSR     LD7F0   /* WAIT SOME MORE */
+        ANDA    #$10    /* KEEP ONLY SEEK ERROR BIT */
+        STA     x_DCSTA /* SAVE IN DSKCON STATUS */
+        RTS
 ;
 ; WAIT FOR THE 1793 TO BECOME UNBUSY. IF IT DOES NOT BECOME UNBUSY,
 ; FORCE AN INTERRUPT AND ISSUE A 'DRIVE NOT READY' 1793 ERROR.

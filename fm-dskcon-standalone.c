@@ -24,59 +24,59 @@ enum
 
 #include <coco.h>
 
-byte fm_DCOPC;  /* DSKCON OPERATION CODE 0-3 */
-byte fm_DCDRV;  /* DSKCON DRIVE NUMBER 0—3 */
-byte fm_DCTRK;  /* DSKCON TRACK NUMBER 0—34 */
-byte fm_DCSEC;  /* DSKCON SECTOR NUMBER 1-18 */
-byte *fm_DCBPT; /* DSKCON DATA POINTER */
-byte fm_DCSTA;  /* DSKCON STATUS BYTE */
-;            /* 0x80 Read Sector */
-;            /* 0xa0 Write Sector */
-;            /* 0xc0 Read Address */
-;            /* 0xf0 Write Track */
+// byte fm_DCOPC;  /* DSKCON OPERATION CODE 0-3 */
+// byte fm_DCDRV;  /* DSKCON DRIVE NUMBER 0—3 */
+// byte fm_DCTRK;  /* DSKCON TRACK NUMBER 0—34 */
+// byte fm_DCSEC;  /* DSKCON SECTOR NUMBER 1-18 */
+// byte *fm_DCBPT; /* DSKCON DATA POINTER */
+// byte fm_DCSTA;  /* DSKCON STATUS BYTE */
+// ;            /* 0x80 Read Sector */
+// ;            /* 0xa0 Write Sector */
+// ;            /* 0xc0 Read Address */
+// ;            /* 0xf0 Write Track */
+// 
+// byte fm_RDYTMR;    /* MOTOR TURN OFF TIMER */
+// byte fm_DRGRAM;    /* RAM IMAGE OF DSKREG ($FF40) */
+// byte fm_DR0TRK[4];    /* CURRENT TRACK NUMBER, DRIVES 0,1,2,3 */
+// byte fm_NMIFLG;    /* NMI FLAG: 0=DON'T VECTOR <>0=YECTOR OUT */
+// void *fm_DNMIVC;   /* NMI VECTOR: WHERE TO JUMP FOLLOWING AN NMI */
 
-byte fm_RDYTMR;    /* MOTOR TURN OFF TIMER */
-byte fm_DRGRAM;    /* RAM IMAGE OF DSKREG ($FF40) */
-byte fm_DR0TRK[4];    /* CURRENT TRACK NUMBER, DRIVES 0,1,2,3 */
-byte fm_NMIFLG;    /* NMI FLAG: 0=DON'T VECTOR <>0=YECTOR OUT */
-void *fm_DNMIVC;   /* NMI VECTOR: WHERE TO JUMP FOLLOWING AN NMI */
-
-byte fm_dskcon_driveEnableMasks[4] = { 0x01, 0x02, 0x04, 0x40 };
-
-
-unsigned long fm_dskcon_init(fm_dskcon_NmiServiceFunctionPointer newNMIService)
-{
-    fm_DCOPC = 0;
-    fm_DCDRV = 0;
-    fm_DCTRK = 0;
-    fm_DCSEC = 0;
-    fm_DCBPT = 0;
-    fm_DCSTA = 0;
-
-    fm_RDYTMR = 0;
-    fm_DRGRAM = 0;
-    fm_NMIFLG = 0;
-    fm_DNMIVC = 0;
-    * (word *) fm_DR0TRK = 0;
-    * (word *) (fm_DR0TRK + 2) = 0;
-
-    // Redirect NMI to jump at newNMIService.
-    //
-    byte *isr = * (byte **) 0xFFFC;
-    unsigned long retVal = ((unsigned long) isr[0] << 16) | * (word *) (isr + 1);  // save orig 3 bytes
-    *isr = 0x7E;  // JMP
-    * (fm_dskcon_NmiServiceFunctionPointer *) (isr + 1) = newNMIService;
-
-    return retVal;
-}
+// byte fm_dskcon_driveEnableMasks[4] = { 0x01, 0x02, 0x04, 0x40 };
 
 
-void fm_dskcon_shutdown(unsigned long initReturnValue)
-{
-    byte *isr = * (byte **) 0xFFFC;
-    isr[0] = (byte) (initReturnValue >> 16);
-    * (word *) (isr + 1) = (word) initReturnValue;
-}
+// unsigned long fm_dskcon_init(fm_dskcon_NmiServiceFunctionPointer newNMIService)
+// {
+//     fm_DCOPC = 0;
+//     fm_DCDRV = 0;
+//     fm_DCTRK = 0;
+//     fm_DCSEC = 0;
+//     fm_DCBPT = 0;
+//     fm_DCSTA = 0;
+// 
+//     fm_RDYTMR = 0;
+//     fm_DRGRAM = 0;
+//     fm_NMIFLG = 0;
+//     fm_DNMIVC = 0;
+//     * (word *) fm_DR0TRK = 0;
+//     * (word *) (fm_DR0TRK + 2) = 0;
+// 
+//     // Redirect NMI to jump at newNMIService.
+//     //
+//     byte *isr = * (byte **) 0xFFFC;
+//     unsigned long retVal = ((unsigned long) isr[0] << 16) | * (word *) (isr + 1);  // save orig 3 bytes
+//     *isr = 0x7E;  // JMP
+//     * (fm_dskcon_NmiServiceFunctionPointer *) (isr + 1) = newNMIService;
+// 
+//     return retVal;
+// }
+
+
+// void fm_dskcon_shutdown(unsigned long initReturnValue)
+// {
+//     byte *isr = * (byte **) 0xFFFC;
+//     isr[0] = (byte) (initReturnValue >> 16);
+//     * (word *) (isr + 1) = (word) initReturnValue;
+// }
 
 
 interrupt asm void fm_dskcon_nmiService()
@@ -84,11 +84,11 @@ interrupt asm void fm_dskcon_nmiService()
 #ifndef __CLANGD__
     asm
     {
-        LDA     fm_NMIFLG      // GET NMI FLAG
+        LDA     x_NMIFLG      // GET NMI FLAG
         BEQ     @nmiService_end  // RETURN IF NOT ACTIVE
-        LDX     fm_DNMIVC      // GET NEW RETURN VECTOR
+        LDX     x_DNMIVC      // GET NEW RETURN VECTOR
         STX     10,S        // STORE AT STACKED PC SLOT ON STACK
-        CLR     fm_NMIFLG      // RESET NMI FLAG
+        CLR     x_NMIFLG      // RESET NMI FLAG
 @nmiService_end:
     }
 #endif
@@ -107,20 +107,20 @@ asm __norts__ void fm_dskcon_processSector()
         PSHS    Y,U     /* Preserve registers used by CMOC calling convention */
         LDA     #$05    /* GET RETRY COUNT AND */
         PSHS    A       /* SAVE IT ON THE STACK */
-LD765   CLR     fm_RDYTMR  /* RESET DRIVE NOT READY TIMER */
-        LDB     fm_DCDRV   /* GET DRIVE NUMBER */
-        LEAX    fm_dskcon_driveEnableMasks
-        LDA     fm_DRGRAM  /* GET DSKREG IMAGE */
+LD765   CLR     x_RDYTMR  /* RESET DRIVE NOT READY TIMER */
+        LDB     x_DCDRV   /* GET DRIVE NUMBER */
+        LEAX    x_dskcon_driveEnableMasks
+        LDA     x_DRGRAM  /* GET DSKREG IMAGE */
         ANDA    #$08    /* KEEP MOTOR STATUS, single DENSITY. HALT disABLE */
         ORA     B,X     /* 'OR' IN DRIVE SELECT DATA */
         ORA     #$00    /* dont 'OR' IN DOUBLE DENSITY */
-        LDB     fm_DCTRK   /* GET TRACK NUMBER */
+        LDB     x_DCTRK   /* GET TRACK NUMBER */
         CMPB    #22     /* PRECOMPENSATION STARTS AT TRACK 22 */
         BLO     LD77E   /* BRANCH IF LESS THAN 22 */
         ORA     #$10    /* TURN ON WRITE PRECOMPENSATION IF >= 22 */
 LD77E   TFR     A,B     /* SAVE PARTIAL IMAGE IN ACCB */
         ORA     #$08    /* 'OR' IN MOTOR ON CONTROL BIT */
-        STA     fm_DRGRAM  /* SAVE IMAGE IN RAM */
+        STA     x_DRGRAM  /* SAVE IMAGE IN RAM */
         STA     DSKREG  /* PROGRAM THE 1793 CONTROL REGISTER */
         BITB    #$08    /* WERE MOTORS ALREADY ON? */
         BNE     LD792   /* DON'T WAIT FOR IT TO COME UP TO SPEED IF ALREADY ON */
@@ -128,9 +128,9 @@ LD77E   TFR     A,B     /* SAVE PARTIAL IMAGE IN ACCB */
         LBSR    LA7D1   /* WAIT SOME MORE FOR MOTOR TO COME UP TO SPEED */
 LD792   BSR     LD7D1   /* WAIT UNTIL NOT BUSY OR TIME OUT */
         BNE     LD7A0   /* BRANCH IF TIMED OUT (DOOR OPEN. NO DISK, NO POWER. ETC.) */
-        CLR     fm_DCSTA   /* CLEAR STATUS REGISTER */
+        CLR     x_DCSTA   /* CLEAR STATUS REGISTER */
 ;
-        LDB     fm_DCOPC   /* GET COMMAND */
+        LDB     x_DCOPC   /* GET COMMAND */
 ;
         /* JUMP TO COMMAND WITHOUT JUMP TABLE AS IN DISK BASIC (FOR RELOCATABILITY). */
         LBEQ    fm_dskcon_cmd0
@@ -151,7 +151,7 @@ fm_dskcon_cmd2
         LBSR    LD7F8   /* COMMAND 2: READ SECTOR */
 ;
 LD7A0   PULS    A       /* GET RETRY COUNT */
-        LDB     fm_DCSTA   /* GET STATUS */
+        LDB     x_DCSTA   /* GET STATUS */
         BEQ     LD7B1   /* BRANCH IF NO ERRORS */
         DECA            /* DECREMENT RETRIES COUNTER */
         BEQ     LD7B1   /* BRANCH IF NO RETRIES LEFT */
@@ -160,7 +160,7 @@ LD7A0   PULS    A       /* GET RETRY COUNT */
         BNE     LD7A0   /* BRANCH IF SEEK ERROR */
         BRA     LD765   /* GO TRY COMMAND AGAIN IF NO ERROR */
 LD7B1   LDA     #120    /* 120*1/60 = 2 SECONDS (1/60 SECOND FOR EACH IRQ INTERRUPT) */
-        STA     fm_RDYTMR  /* WAIT 2 SECONDS BEFORE TURNING OFF MOTOR */
+        STA     x_RDYTMR  /* WAIT 2 SECONDS BEFORE TURNING OFF MOTOR */
         LBRA    @fm_dskcon_end  /* EXIT DSKCON */
 fm_dskcon_cmd4
 		LBSR	LD7F6	/* COMMAND 4: Write Track */
@@ -171,8 +171,8 @@ fm_dskcon_cmd3
 ;
 ;
 ; RESTORE HEAD TO TRACK 0
-LD7B8   LEAX    fm_DR0TRK  /* POINT TO TRACK TABLE */
-        LDB     fm_DCDRV   /* GET DRIVE NUMBER */
+LD7B8   LEAX    x_DR0TRK  /* POINT TO TRACK TABLE */
+        LDB     x_DCDRV   /* GET DRIVE NUMBER */
         CLR     B,X     /* ZERO TRACK NUMBER */
         LDA     #$03    /* RESTORE HEAD TO TRACK 0, UNLOAD THE HEAD */
         STA     FDCREG  /* AT START, 30 MS STEPPING RATE */
@@ -181,7 +181,7 @@ LD7B8   LEAX    fm_DR0TRK  /* POINT TO TRACK TABLE */
         BSR     LD7D1   /* WAIT TILL DRIVE NOT BUSY */
         BSR     LD7F0   /* WAIT SOME MORE */
         ANDA    #$10    /* 1793 STATUS : KEEP ONLY SEEK ERROR */
-        STA     fm_DCSTA   /* SAVE IN DSKCON STATUS */
+        STA     x_DCSTA   /* SAVE IN DSKCON STATUS */
 LD7D0   RTS
 ;
 ;
@@ -200,7 +200,7 @@ LD7DF   LDA     #$D0    /* FORCE INTERRUPT COMMAND - TERMINATE ANY COMMAND */
         EXG     A,A
         LDA     FDCREG  /* RESET INTRQ (FDC INTERRUPT REQUEST) */
         LDA     #$80    /* RETURN DRIVE NOT READY STATUS IF THE DRIVE DID NOT BECOME UNBUSY */
-        STA     fm_DCSTA   /* SAVE DSKCON STATUS BYTE */
+        STA     x_DCSTA   /* SAVE DSKCON STATUS BYTE */
         RTS
 ;
 ;
@@ -223,14 +223,14 @@ LD7FA   FCB     $8C     /* SKIP TWO BYTES (THROWN AWAY CMPX INSTRUCTION) */
 ; WRITE ONE SECTOR
 LD7FB   LDA     #$A0    /* $A0 IS WRITE FLAG (1793 WRITE SECTOR) */
 LD800   PSHS    A       /* SAVE READ/WRITE FLAG ON STACK */
-        LEAX    fm_DR0TRK  /* POINT X TO TRACK NUMBER TABLE IN RAM */
-        LDB     fm_DCDRV   /* GET DRIVE NUMBER */
+        LEAX    x_DR0TRK  /* POINT X TO TRACK NUMBER TABLE IN RAM */
+        LDB     x_DCDRV   /* GET DRIVE NUMBER */
         ABX             /* POINT X TO CORRECT DRIVE'S TRACK BYTE */
         LDB     ,X      /* GET TRACK NUMBER OF CURRENT HEAD POSITION */
         STB     1+FDCREG    /* SEND TO 1793 TRACK REGISTER */
-        CMPB    fm_DCTRK       /* COMPARE TO DESIRED TRACK */
+        CMPB    x_DCTRK       /* COMPARE TO DESIRED TRACK */
         BEQ     LD82C       /* BRANCH IF ON CORRECT TRACK */
-        LDA     fm_DCTRK       /* GET TRACK DESIRED */
+        LDA     x_DCTRK       /* GET TRACK DESIRED */
         STA     3+FDCREG    /* SEND TO 1793 DATA REGISTER */
         STA     ,X      /* SAVE IN RAM TRACK IMAGE */
         LDA     #$17    /* SEEK COMMAND FOR 1793: DO NOT LOAD THE */
@@ -242,21 +242,21 @@ LD800   PSHS    A       /* SAVE READ/WRITE FLAG ON STACK */
         BSR     LD7F0   /* WAIT SOME MORE */
         ANDA    #$18    /* KEEP ONLY SEEK ERROR OR CRC ERROR IN ID FIELD */
         BEQ     LD82C   /* BRANCH IF NO ERRORS - HEAD ON CORRECT TRACK */
-        STA     fm_DCSTA   /* SAVE IN DSKCON STATUS */
+        STA     x_DCSTA   /* SAVE IN DSKCON STATUS */
 LD82A   PULS    A,PC
 ; HEAD POSITIONED ON CORRECT TRACK
-LD82C   LDA     fm_DCSEC       /* GET SECTOR NUMBER DESIRED */
+LD82C   LDA     x_DCSEC       /* GET SECTOR NUMBER DESIRED */
         STA     2+FDCREG    /* SEND TO 1793 SECTOR REGISTER */
         LEAX    LD88B,PCR   /* POINT X TO ROUTINE TO BE VECTORED */
-        STX     fm_DNMIVC      /* TO BY NMI UPON COMPLETION OF DISK I/O AND SAVE VECTOR */
-        LDX     fm_DCBPT       /* POINT X TO I/O BUFFER */
+        STX     x_DNMIVC      /* TO BY NMI UPON COMPLETION OF DISK I/O AND SAVE VECTOR */
+        LDX     x_DCBPT       /* POINT X TO I/O BUFFER */
         LDA     FDCREG      /* RESET INTRQ (FDC INTERRUPT REQUEST) */
-        LDA     fm_DRGRAM      /* GET DSKREG IMAGE */
+        LDA     x_DRGRAM      /* GET DSKREG IMAGE */
         ORA     #$80    /* SET FLAG TO ENABLE 1793 TO HALT 6809 */
         PULS    B       /* GET READ/WRITE COMMAND FROM STACK */
         LDY     #0      /* ZERO OUT Y - TIMEOUT INITIAL VALUE */
         LDU     #FDCREG /* U POINTS TO 1793 INTERFACE REGISTERS */
-        COM     fm_NMIFLG  /* NMI FLAG = $FF: ENABLE NMI VECTOR */
+        COM     x_NMIFLG  /* NMI FLAG = $FF: ENABLE NMI VECTOR */
         cmpb    #$f0     /* check for write track */
         bne     LD82E
 ; Special write track code to implement an INTRQ after writing a half track
@@ -288,7 +288,7 @@ LD85B   BITB    ,U      /* IS 1793 READY FOR A BYTE? (DRQ SET IN STATUS BYTE) */
         BNE     LD86B   /* BRANCH IF SO */
         LEAY    -1,Y    /* DECREMENT WAIT TIMER */
         BNE     LD85B   /* KEEP WAITING FOR THE 1793 DRQ */
-LD863   CLR     fm_NMIFLG  /* RESET NMI FLAG */
+LD863   CLR     x_NMIFLG  /* RESET NMI FLAG */
         ANDCC   #$AF    /* ENABLE FIRQ,IRQ */
         LBRA    LD7DF   /* FORCE INTERRUPT, SET DRIVE NOT READY ERROR */
 ; WRITE A SECTOR
@@ -320,7 +320,7 @@ rd1	     lda	 ,u	    /* Get status */
 LD88B   ANDCC   #$AF    /* ENABLE IRQ, FIRO */
         LDA     FDCREG  /* GET STATUS & KEEP WRITE PROTECT, RECORD TYPE/WRITE */
         ANDA    #$7C    /* FAULT, RECORD NOT FOUND, CRC ERROR OR LOST DATA */
-        STA     fm_DCSTA   /* SAVE IN DSKCON STATUS */
+        STA     x_DCSTA   /* SAVE IN DSKCON STATUS */
         RTS
 ;
 ;
@@ -342,14 +342,14 @@ asm void fm_dskcon_irqService()
 #ifndef __CLANGD__
     asm
     {
-        LDA     fm_RDYTMR      // GET TIMER
+        LDA     x_RDYTMR      // GET TIMER
         BEQ     @end        // BRANCH IF NOT ACTIVE
         DECA                // DECREMENT THE TIMER
-        STA     fm_RDYTMR      // SAVE IT
+        STA     x_RDYTMR      // SAVE IT
         BNE     @end        // BRANCH IF NOT TIME TO TURN OFF DISK MOTORS
-        LDA     fm_DRGRAM      // = GET DSKREG IMAGE
+        LDA     x_DRGRAM      // = GET DSKREG IMAGE
         ANDA    #$B0        // = TURN ALL MOTORS AND DRIVE SELECTS OFF
-        STA     fm_DRGRAM      // = PUT IT BACK IN RAM IMAGE
+        STA     x_DRGRAM      // = PUT IT BACK IN RAM IMAGE
         STA     DSKREG      // SEND TO CONTROL REGISTER (MOTORS OFF)
 @end:
     }

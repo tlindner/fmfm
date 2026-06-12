@@ -10,20 +10,20 @@
 #include <cmoc.h>
 
 
-extern unsigned char fm_DCOPC;  /* DSKCON OPERATION CODE 0-3 */
-extern unsigned char fm_DCDRV;  /* DSKCON DRIVE NUMBER 0—3 */
-extern unsigned char fm_DCTRK;  /* DSKCON TRACK NUMBER 0—34 */
-extern unsigned char fm_DCSEC;  /* DSKCON SECTOR NUMBER 1-18 */
-extern unsigned char *fm_DCBPT; /* DSKCON DATA POINTER */
-extern unsigned char fm_DCSTA;  /* DSKCON STATUS BYTE */
+extern unsigned char x_DCOPC;  /* DSKCON OPERATION CODE 0-3 */
+extern unsigned char x_DCDRV;  /* DSKCON DRIVE NUMBER 0—3 */
+extern unsigned char x_DCTRK;  /* DSKCON TRACK NUMBER 0—34 */
+extern unsigned char x_DCSEC;  /* DSKCON SECTOR NUMBER 1-18 */
+extern unsigned char *x_DCBPT; /* DSKCON DATA POINTER */
+extern unsigned char x_DCSTA;  /* DSKCON STATUS BYTE */
 
-extern unsigned char fm_RDYTMR;    /* MOTOR TURN OFF TIMER */
-extern unsigned char fm_DRGRAM;    /* RAM IMAGE OF DSKREG ($FF40) */
-extern unsigned char fm_DR0TRK[4];    /* CURRENT TRACK NUMBER, DRIVES 0,1,2,3 */
-extern unsigned char fm_NMIFLG;    /* NMI FLAG: 0=DON'T VECTOR <>0=YECTOR OUT */
-extern void *fm_DNMIVC;   /* NMI VECTOR: WHERE TO JUMP FOLLOWING AN NMI */
+extern unsigned char x_RDYTMR;    /* MOTOR TURN OFF TIMER */
+extern unsigned char x_DRGRAM;    /* RAM IMAGE OF DSKREG ($FF40) */
+extern unsigned char x_DR0TRK[4];    /* CURRENT TRACK NUMBER, DRIVES 0,1,2,3 */
+extern unsigned char x_NMIFLG;    /* NMI FLAG: 0=DON'T VECTOR <>0=YECTOR OUT */
+extern void *x_DNMIVC;   /* NMI VECTOR: WHERE TO JUMP FOLLOWING AN NMI */
 
-extern unsigned char fm_dskcon_driveEnableMasks[4];
+extern unsigned char x_dskcon_driveEnableMasks[4];
 
 // Type used by fm_dskcon_init().
 //
@@ -43,13 +43,13 @@ typedef interrupt void (*fm_dskcon_NmiServiceFunctionPointer)();
 // Returns a 24-bit value that must be passed to fm_dskcon_shutdown()
 // to restore the original NMI service routine.
 //
-unsigned long fm_dskcon_init(fm_dskcon_NmiServiceFunctionPointer newNMIService);
+// unsigned long fm_dskcon_init(fm_dskcon_NmiServiceFunctionPointer newNMIService);
 
 
 // initReturnValue: Must be the value obtained from dskcon_init.
 // Must be called while interrupts are masked.
 //
-void fm_dskcon_shutdown(unsigned long initReturnValue);
+// void fm_dskcon_shutdown(unsigned long initReturnValue);
 
 
 // Function to be used as the NMI service routine.
