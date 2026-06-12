@@ -6,6 +6,11 @@
     This file is in the public domain, except the parts taken from DECB.
 */
 
+#ifdef __CLANGD__
+#define interrupt
+#define asm(...)
+#endif
+
 #include "fm-dskcon-standalone.h"
 
 extern unsigned char fm_timer_hi;
@@ -76,6 +81,7 @@ void fm_dskcon_shutdown(unsigned long initReturnValue)
 
 interrupt asm void fm_dskcon_nmiService()
 {
+#ifndef __CLANGD__
     asm
     {
         LDA     fm_NMIFLG      // GET NMI FLAG
@@ -85,6 +91,7 @@ interrupt asm void fm_dskcon_nmiService()
         CLR     fm_NMIFLG      // RESET NMI FLAG
 @nmiService_end:
     }
+#endif
 }
 
 
@@ -94,6 +101,7 @@ asm __norts__ void fm_dskcon_processSector()
      * This code uses the notation n+FDCREG because FDCREG+n gets expanded
      * to "FDCREG +n" by cpp, so the +n gets ignored as a comment.
      */
+#ifndef __CLANGD__
     asm
     {
         PSHS    Y,U     /* Preserve registers used by CMOC calling convention */
@@ -249,8 +257,8 @@ LD82C   LDA     fm_DCSEC       /* GET SECTOR NUMBER DESIRED */
         LDY     #0      /* ZERO OUT Y - TIMEOUT INITIAL VALUE */
         LDU     #FDCREG /* U POINTS TO 1793 INTERFACE REGISTERS */
         COM     fm_NMIFLG  /* NMI FLAG = $FF: ENABLE NMI VECTOR */
-        cmpb #$f0     /* check for write track */
-        bne LD82E
+        cmpb    #$f0     /* check for write track */
+        bne     LD82E
 ; Special write track code to implement an INTRQ after writing a half track
 ; 1. Wait until index pulse.
 ; 2. Wait for half track rotation
@@ -264,7 +272,7 @@ LD82D   LEAY    -1,Y            /* DECREMENT COUNTER (5 CYCLES) */
         BNE     LD82D           /* LOOP UNTIL ZERO (3 CYCLES) */
         ldb     fm_timer_lo
         stb     $FF95           /* WRITE TO GIME TIMER */
-        ldb     fm_timer_hi          /* FULL ROTATION TICK COUNT */
+        ldb     fm_timer_hi     /* FULL ROTATION TICK COUNT */
         stb     $FF94           /* WRITE TO GIME TIMER: STARTS COUNTING NOW */
         ldb     #$f0
         bra     LD82F    /* Go continue */  
@@ -325,11 +333,13 @@ LA7D3   LEAX    -1,X    /* DECREMENT X */
 @fm_dskcon_end:
         PULS    Y,U,PC  /* Restore registers used by CMOC calling convention */
     }
+#endif
 }
 
 
 asm void fm_dskcon_irqService()
 {
+#ifndef __CLANGD__
     asm
     {
         LDA     fm_RDYTMR      // GET TIMER
@@ -343,4 +353,5 @@ asm void fm_dskcon_irqService()
         STA     DSKREG      // SEND TO CONTROL REGISTER (MOTORS OFF)
 @end:
     }
+#endif
 }

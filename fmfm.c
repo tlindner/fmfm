@@ -1,3 +1,8 @@
+#ifdef __CLANGD__
+#define interrupt
+#define asm(...)
+#endif
+
 #include "x-dskcon-standalone.h"
 #include "fm-dskcon-standalone.h"
 #include <coco.h>
@@ -63,6 +68,22 @@ static const TrackEntry fm_track_template[] = {
     { 27, 0xFF },       /* Gap III (post-data gap) */
     { DATA_END, 0 }
 };
+
+void stopMotor(void)
+{
+#ifndef __CLANGD__
+	asm
+	{
+		lda     fm_DRGRAM
+		anda    #$B0        ; turn off motors and drive selects
+		sta     fm_DRGRAM
+		lda     x_DRGRAM
+		anda    #$B0        ; turn off motors and drive selects
+		sta     x_DRGRAM
+		sta     DSKREG
+	}
+#endif
+}
 
 static void emit(byte *buf, unsigned *pos, byte b, unsigned n)
 {
@@ -145,9 +166,10 @@ unsigned build_track(byte *buf, int size,
     return pos;
 }
 
-void processError()
+void processError(byte error)
 {
-	printf("ERROR: $%02x\n", fm_DCSTA);
+	printf("ERROR: $%02x\n", error);
+	stopMotor();
 	exit(0);
 }
 
@@ -164,7 +186,7 @@ void formatFM()
 	printf("SEEKING TRACK 0... ");
 	fm_dskcon_processSector(); /* seek to track 0 */
 	if (fm_DCSTA != 0)
-		processError();
+		processError(fm_DCSTA);
 
 	printf("SUCCESS\n");
 
@@ -180,7 +202,7 @@ void formatFM()
 	fm_dskcon_processSector();
 	
 	if (fm_DCSTA != 0)
-		processError();
+		processError(fm_DCSTA);
 
 	printf("SUCCESS\n");
 	
@@ -214,7 +236,7 @@ void fm_readSectorAddress(byte fm_buf[])
 		if(prog>6) prog = 0;
 		
 		/* bail early if nothing seen after 2 attempts */
-		if( i == 2 )
+		if( i == 1 )
 		{
 			byte j, found = 0;
 			for( j=1; j<20; j++ )
@@ -258,7 +280,7 @@ void mfm_readSectorAddress(byte mfm_buf[])
 		if(prog>6) prog = 0;
 
 		/* bail early if nothing seen after 2 attempts */
-		if( i == 2 )
+		if( i == 1 )
 		{
 			byte j, found = 0;
 			for( j=1; j<20; j++ )
@@ -356,7 +378,7 @@ void formatMFM()
 	printf("SEEKING TRACK 0... ");
 	x_dskcon_processSector(); /* seek to track 0 */
 	if (x_DCSTA != 0)
-		processError();
+		processError(x_DCSTA);
 
 	printf("SUCCESS\n");
 
@@ -372,7 +394,7 @@ void formatMFM()
 	x_dskcon_processSector();
 	
 	if (x_DCSTA != 0)
-		processError();
+		processError(x_DCSTA);
 
 	printf("SUCCESS\n");
 	
@@ -381,27 +403,33 @@ void formatMFM()
 
 interrupt void FIRQRoutine(void)
 {
+#ifndef __CLANGD__
     asm
     {
     	
         lda     #$d8          // Load force interrupt command
         sta     FDCREG        // store it
         clr		$ff93         // stop timer
+        neg     $400
     }
+#endif
 }
 
 void setGIMETimer(unsigned value)
 {
+#ifndef __CLANGD__
     asm
     {
         ldd     :value
         stb     $FF95
         sta     $FF94
     }
+#endif
 }
 
 void setupFIRQ(void)
 {
+#ifndef __CLANGD__
 	asm
 	{
 		lda #$20 /* timer FIRQ enable */
@@ -411,10 +439,12 @@ void setupFIRQ(void)
 		sta $ff90
 		lda $ff93 /* clear pending */
 	}
+#endif
 }
 
 void stopFIRQ(void)
 {
+#ifndef __CLANGD__
 	asm
 	{
 		lda #$00
@@ -423,19 +453,33 @@ void stopFIRQ(void)
 		sta $ff90
 		lda $ff93 /* clear pending */
 	}
+#endif
 }
 
-void stopMotor(void)
+void armMotorTimeout(byte seconds)
 {
-	asm
+    /* Poke Disk BASIC's RDYTMR at $0985.
+     * Value × 1/60s ticks until motor off. */
+    * (byte *) 0x0985 = (byte)(seconds * 60);
+}
+
+void displaySectorAddress(byte offset, byte row, byte value)
+{
+	locate(offset+6,row);
+	if( value == 0)
 	{
-		lda     fm_DRGRAM
-		anda    #$B0        ; turn off motors and drive selects
-		sta     fm_DRGRAM
-		lda     x_DRGRAM
-		anda    #$B0        ; turn off motors and drive selects
-		sta     x_DRGRAM
-		sta     DSKREG
+	}
+	else if( value<10 )
+	{
+		printf("%d", value);
+	}
+	else if( value == 0xff)
+	{
+		printf("E");
+	}
+	else
+	{
+		printf("+");
 	}
 }
 
@@ -512,22 +556,7 @@ main()
 	
 		for(i=1; i<20; i++)
 		{
-			locate(i+6,6);
-			if( mfm_buf[i] == 0)
-			{
-			}
-			else if( mfm_buf[i]<10 )
-			{
-				printf("%d", mfm_buf[i]);
-			}
-			else if( mfm_buf[i] == 0xff)
-			{
-				printf("E");
-			}
-			else
-			{
-				printf("+");
-			}
+			displaySectorAddress(i, 5, mfm_buf[i]);
 		}
 	
 		mfm_readSector(mfm_buf);
@@ -536,26 +565,13 @@ main()
 	
 		for(i=1; i<20; i++)
 		{
-			locate(i+6,12);
-			if( fm_buf[i] == 0)
-			{
-			}
-			else if( fm_buf[i]<10 )
-			{
-				printf("%d", fm_buf[i]);
-			}
-			else if( fm_buf[i] == 0xff)
-			{
-				printf("E");
-			}
-			else
-			{
-				printf("+");
-			}
+			displaySectorAddress(i, 12, fm_buf[i]);
 		}
 	
 		fm_readSector(fm_buf);
 	
+		armMotorTimeout(2);
+		
 		locate(0,15);
 		re_ask_delay2:
 		printf("ENTER DELAY? ");
