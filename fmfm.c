@@ -503,6 +503,10 @@ main()
 		
 		if (trackNum<0 || trackNum>40) goto re_ask_track;
 
+		// go to track zero
+		
+		// step in trackNum times
+		
 		formatMFM();
 	
 		disableInterrupts();
