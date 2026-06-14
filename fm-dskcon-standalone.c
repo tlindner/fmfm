@@ -228,6 +228,8 @@ LD800   PSHS    A       /* SAVE READ/WRITE FLAG ON STACK */
         ABX             /* POINT X TO CORRECT DRIVE'S TRACK BYTE */
         LDB     ,X      /* GET TRACK NUMBER OF CURRENT HEAD POSITION */
         STB     1+FDCREG    /* SEND TO 1793 TRACK REGISTER */
+        CMPA    #$f0		/* skip compare track if track write */
+        BEQ     LD82C
         CMPB    x_DCTRK       /* COMPARE TO DESIRED TRACK */
         BEQ     LD82C       /* BRANCH IF ON CORRECT TRACK */
         LDA     x_DCTRK       /* GET TRACK DESIRED */
@@ -264,6 +266,13 @@ LD82C   LDA     x_DCSEC       /* GET SECTOR NUMBER DESIRED */
 ; 2. Wait for half track rotation
 ; 3. Arm timer to fire after whole track rotation.
         ORCC    #$10            /* DISABLE IRQ ONLY */
+        ldb     x_DCTRK			/* Load current track number */
+        stb     1+FDCREG		/* Program it to track register */
+        stb     3+FDCREG        /* Program it to sector register */
+        ldb     #$10			/* issue seek command */
+        stb     FDCREG          /* we need to guarantee a type I command to get index pulses */
+        EXG     A,A             /* Pause */
+        EXG     A,A             /* Pause */
 LD82I   LDB     ,U              /* READ FDC STATUS */
         BITB    #$02            /* INDEX PULSE HIGH? */
         BEQ     LD82I           /* NO, KEEP POLLING */

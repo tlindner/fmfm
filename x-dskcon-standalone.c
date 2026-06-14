@@ -4,12 +4,28 @@
     This file is in the public domain, except the parts taken from DECB.
 */
 
+#ifdef __CLANGD__
+#define interrupt
+#define asm(...)
+#endif
+
 #include "x-dskcon-standalone.h"
 
 enum
 {
     DSKREG = 0xFF40,   // DISK CONTROL REGISTER
     FDCREG = 0xFF48,   // 1793 CONTROL REGISTER
+    DCOPC = 0x00ea,		// DSKCON OPERATION CODE
+    DCDRV = 0x00EB,	  // DSKCON DRIVE NUMBER
+    DCTRK = 0x00EC,    // DSKCON TRACK NUMBER
+    DCSEC =  0x00ED,    // DSKCON SECTOR NUMBER
+    DCBPT = 0x00EE,    // DSKCON DATA POINTER
+    DCSTA = 0x00F0,     // DSKCON STATUS REGISTER
+    DR0TRK = 0x097E,   // CURRENT TRACK NUMBER, DRIVES 0,1,2,3
+    RDYTMR = 0x0985,     // MOTOR TURN OFF TIMER
+    DRGRAM = 0x0986,    // RAM IMAGE OF DSKREG ($FF40)
+    NMIFLG = 0x0982,     // NMI FLAG: 0=DON'T VECTOR <>0=YECTOR OUT
+    DNMIVC = 0x0983     //NMI VECTOR: WHERE TO JUMP FOLLOWING AN NMI
 };
 
 #include <coco.h>
@@ -34,22 +50,26 @@ void *x_DNMIVC;   /* NMI VECTOR: WHERE TO JUMP FOLLOWING AN NMI */
 byte x_dskcon_driveEnableMasks[4] = { 0x01, 0x02, 0x04, 0x40 };
 
 
+
 unsigned long x_dskcon_init(x_dskcon_NmiServiceFunctionPointer newNMIService)
 {
-    x_DCOPC = 0;
-    x_DCDRV = 0;
-    x_DCTRK = 0;
-    x_DCSEC = 0;
-    x_DCBPT = 0;
-    x_DCSTA = 0;
+    x_DCOPC = *(byte *)DCOPC;
+    x_DCDRV = *(byte *)DCDRV;
+    x_DCTRK = *(byte *)DCTRK;
+    x_DCSEC = *(byte *)DCSEC;
+    x_DCBPT = *(byte **)DCBPT;
+    x_DCSTA = *(byte *)DCSTA;
 
-    x_RDYTMR = 0;
-    x_DRGRAM = 0;
-    x_NMIFLG = 0;
-    x_DNMIVC = 0;
-    * (word *) x_DR0TRK = 0;
-    * (word *) (x_DR0TRK + 2) = 0;
-
+    x_RDYTMR = *(byte *)RDYTMR;
+    x_DRGRAM = *(byte *)DRGRAM;
+    x_NMIFLG = *(byte *)NMIFLG;
+    x_DNMIVC = *(byte **)DNMIVC;
+ 
+	x_DR0TRK[0] = *((byte *)DR0TRK + 0);
+	x_DR0TRK[1] = *((byte *)DR0TRK + 1);
+	x_DR0TRK[2] = *((byte *)DR0TRK + 2);
+	x_DR0TRK[3] = *((byte *)DR0TRK + 3);
+	
     // Redirect NMI to jump at newNMIService.
     //
     byte *isr = * (byte **) 0xFFFC;
@@ -66,6 +86,23 @@ void x_dskcon_shutdown(unsigned long initReturnValue)
     byte *isr = * (byte **) 0xFFFC;
     isr[0] = (byte) (initReturnValue >> 16);
     * (word *) (isr + 1) = (word) initReturnValue;
+
+	*(byte *)DCOPC  = x_DCOPC;
+	*(byte *)DCDRV  = x_DCDRV;
+	*(byte *)DCTRK  = x_DCTRK;
+	*(byte *)DCSEC  = x_DCSEC;
+	*(byte **)DCBPT = x_DCBPT;
+	*(byte *)DCSTA  = x_DCSTA;
+	
+	*(byte *)RDYTMR = x_RDYTMR;
+	*(byte *)DRGRAM = x_DRGRAM;
+	*(byte *)NMIFLG = x_NMIFLG;
+	*(byte **)DNMIVC = (byte *)x_DNMIVC;
+	
+	*((byte *)DR0TRK + 0) = x_DR0TRK[0];
+	*((byte *)DR0TRK + 1) = x_DR0TRK[1];
+	*((byte *)DR0TRK + 2) = x_DR0TRK[2];
+	*((byte *)DR0TRK + 3) = x_DR0TRK[3];
 }
 
 
@@ -172,16 +209,22 @@ LD7B8   LEAX    x_DR0TRK  /* POINT TO TRACK TABLE */
         ANDA    #$10    /* 1793 STATUS : KEEP ONLY SEEK ERROR */
         STA     x_DCSTA   /* SAVE IN DSKCON STATUS */
 LD7D0   RTS
-x_dskcon_cmd1
-        LDA     #$13    /* STEP: UPDATE TRACK REGISTER, VERIFY OFF, 30ms rate */
+x_dskcon_cmd1     /* step in */
+        LEAX    x_DR0TRK      /* POINT TO TRACK TABLE */
+        LDB     x_DCDRV       /* GET DRIVE NUMBER */
+        LDA     x_DCTRK       /* GET DESIRED TRACK */
+        INCA                  /* step in */
+        STA     B,X           /* UPDATE RAM TRACK IMAGE */
+        STA     x_DCTRK
+        LDA     #$53    /* STEP: UPDATE TRACK REGISTER, VERIFY OFF, 30ms rate */
         STA     FDCREG
         EXG     A,A
         EXG     A,A     /* WAIT FOR 1793 TO RESPOND TO COMMAND */
         BSR     LD7D1   /* WAIT TILL DRIVE NOT BUSY (WITH TIMEOUT) */
         BSR     LD7F0   /* WAIT SOME MORE */
-        ANDA    #$10    /* KEEP ONLY SEEK ERROR BIT */
+        ANDA    #$90    /* KEEP SEEK ERROR BIT and drive not ready */
         STA     x_DCSTA /* SAVE IN DSKCON STATUS */
-        RTS
+        BRA     LD7A0   /* EXIT DSKCON */
 ;
 ; WAIT FOR THE 1793 TO BECOME UNBUSY. IF IT DOES NOT BECOME UNBUSY,
 ; FORCE AN INTERRUPT AND ISSUE A 'DRIVE NOT READY' 1793 ERROR.
@@ -226,6 +269,9 @@ LD800   PSHS    A       /* SAVE READ/WRITE FLAG ON STACK */
         ABX             /* POINT X TO CORRECT DRIVE'S TRACK BYTE */
         LDB     ,X      /* GET TRACK NUMBER OF CURRENT HEAD POSITION */
         STB     1+FDCREG    /* SEND TO 1793 TRACK REGISTER */
+		LDA     x_DCOPC       /* SKIP SEEK FOR WRITE TRACK (NO ID TO VERIFY AGAINST) */
+        CMPA    #4
+        BEQ     LD82C
         CMPB    x_DCTRK       /* COMPARE TO DESIRED TRACK */
         BEQ     LD82C       /* BRANCH IF ON CORRECT TRACK */
         LDA     x_DCTRK       /* GET TRACK DESIRED */

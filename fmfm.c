@@ -180,24 +180,24 @@ void formatFM()
 	x_DCOPC = 0;      // 0 = seek to track 0, 2 = read,
 					  // 3 = write, 4 = format, 5 = read address
 	x_DCDRV = driveNum; // 0..3
-	x_DCTRK = 0;     // >= 0
+	x_DCTRK = trackNum;     // >= 0
 	x_DCSEC = 0;      // >= 1
 	
-	printf("SEEKING TRACK 0... ");
-	fm_dskcon_processSector(); /* seek to track 0 */
-	if (x_DCSTA!=0)
-		processError(x_DCSTA);
-
-	printf("SUCCESS\n");
+// 	printf("SEEKING TRACK 0... ");
+// 	fm_dskcon_processSector(); /* seek to track 0 */
+// 	if (x_DCSTA!=0)
+// 		processError(x_DCSTA);
+// 
+// 	printf("SUCCESS\n");
 
 	x_DCOPC = 4;      
 	x_DCBPT = track_buf;  // address of sector buffer
 
 	unsigned result;
-	result = build_track(track_buf, 6400/2, fm_track_template, /*track*/0, /*side*/0,
+	result = build_track(track_buf, 6400/2, fm_track_template, trackNum, /*side*/0,
 		/*fill*/0x55, /*sectors_per_track*/17, /*sector_size_code*/0, 0xff);
 
-	x_DCTRK = 0;     // >= 0
+// 	x_DCTRK = 0;     // >= 0
 	printf("FORMATTING FM TRACK... ");
 	fm_dskcon_processSector();
 	
@@ -212,7 +212,7 @@ void fm_readSectorAddress(byte fm_buf[])
 	x_DCOPC = 5;      // 0 = seek to track 0, 2 = read,
 					  // 3 = write, 4 = format, 5 = read address
 	x_DCDRV = driveNum; // 0..3
-	x_DCTRK = 0;     // >= 0
+	x_DCTRK = trackNum;     // >= 0
 	x_DCSEC = 0;      // >= 1
 	x_DCBPT = track_buf;  // address of sector buffer
 
@@ -252,7 +252,7 @@ void mfm_readSectorAddress(byte mfm_buf[])
 	x_DCOPC = 5;      // 0 = seek to track 0, 2 = read,
 					  // 3 = write, 4 = format, 5 = read address
 	x_DCDRV = driveNum; // 0..3
-	x_DCTRK = 0;     // >= 0
+	x_DCTRK = trackNum;     // >= 0
 	x_DCSEC = 0;      // >= 1
 	x_DCBPT = track_buf;  // address of sector buffer
 	
@@ -292,7 +292,7 @@ void mfm_readSector(byte mfm_buf[])
 	x_DCOPC = 2;      // 0 = seek to track 0, 2 = read,
 					  // 3 = write, 4 = format, 5 = read address
 	x_DCDRV = driveNum;      // 0..3
-	x_DCTRK = 0;     // >= 0
+	x_DCTRK = trackNum;     // >= 0
 	x_DCBPT = track_buf;  // address of sector buffer
 	
 	byte i;
@@ -322,7 +322,7 @@ void fm_readSector(byte fm_buf[])
 	x_DCOPC = 2;      // 0 = seek to track 0, 2 = read,
 					  // 3 = write, 4 = format, 5 = read address
 	x_DCDRV = driveNum; // 0..3
-	x_DCTRK = 0;     // >= 0
+	x_DCTRK = trackNum;     // >= 0
 	x_DCBPT = track_buf;  // address of sector buffer
 	
 	byte i;
@@ -352,24 +352,24 @@ void formatMFM()
 	x_DCOPC = 0;      // 0 = seek to track 0, 2 = read,
 					  // 3 = write, 4 = format, 5 = read address
 	x_DCDRV = driveNum; // 0..3
-	x_DCTRK = 0;     // >= 0
+	x_DCTRK = trackNum;     // >= 0
 	x_DCSEC = 0;      // >= 1
 	
-	printf("SEEKING TRACK 0... ");
-	x_dskcon_processSector(); /* seek to track 0 */
-	if (x_DCSTA != 0)
-		processError(x_DCSTA);
-
-	printf("SUCCESS\n");
+// 	printf("SEEKING TRACK 0... ");
+// 	x_dskcon_processSector(); /* seek to track 0 */
+// 	if (x_DCSTA != 0)
+// 		processError(x_DCSTA);
+// 
+// 	printf("SUCCESS\n");
 
 	x_DCOPC = 4;      
 	x_DCBPT = track_buf;  // address of sector buffer
 
 	unsigned result;
-	result = build_track(track_buf, 6400, mfm_track_template, /*track*/0, /*side*/0,
+	result = build_track(track_buf, 6400, mfm_track_template, trackNum, /*side*/0,
 		/*fill*/0x55, /*sectors_per_track*/18, /*sector_size_code*/1, GAP_BYTE);
 
-	x_DCTRK = 0;     // >= 0
+	x_DCTRK = trackNum;     // >= 0
 	printf("FORMATTING MFM TRACK... ");
 	x_dskcon_processSector();
 	
@@ -466,47 +466,84 @@ main()
     cookie = x_dskcon_init(x_dskcon_nmiService);
 
 	re_ask_drive:
-	printf("DRIVE NUMBER FOR TRACK\nTESTING? ");
+	printf("DRIVE NUMBER (%d)? ", driveNum);
 	char *response = readline();
-	int n = atoi(response);
-	driveNum = (byte)n;
-	
-	if (driveNum<0 || driveNum>3) goto re_ask_drive;
-
-	printf("TIMER DELAY: %d\n", ((unsigned)fm_timer_hi << 8) | fm_timer_lo);
+	int n;
+	if (response[0] != '\0')
+	{
+		n = atoi(response);
+		driveNum = (byte)n;
+		
+		if (driveNum<0 || driveNum>3) goto re_ask_drive;
+	}
 
 	while (1)
 	{
 		re_ask_delay:
-		printf("ENTER NEW DELAY? ");
+		printf("ENTER NEW DELAY (%d)? ", ((unsigned)fm_timer_hi << 8) | fm_timer_lo);
 		response = readline();
-		n = atoi(response);
-		
-		if (n<0 || n>4095) goto re_ask_delay;
-		
-		if (n!=0)
+		if (response[0] != '\0')
 		{
-			fm_timer_hi = (byte)(n>>8);
-			fm_timer_lo = (byte)n;
-		}
-		else
-		{
-			stopMotor();
-			break;
+			n = atoi(response);
+			
+			if (n<0 || n>4095) goto re_ask_delay;
+			
+			if (n!=0)
+			{
+				fm_timer_hi = (byte)(n>>8);
+				fm_timer_lo = (byte)n;
+			}
+			else
+			{
+				stopMotor();
+				break;
+			}
 		}
 	
 		re_ask_track:
-		printf("TRACK NUMBER? ");
+		printf("TRACK NUMBER (%d)? ", trackNum);
 		char *response = readline();
-		n = atoi(response);
-		trackNum = (byte)n;
-		
-		if (trackNum<0 || trackNum>40) goto re_ask_track;
+		if (response[0] != '\0')
+		{
+			n = atoi(response);
+			trackNum = (byte)n;
+			
+			if (trackNum<0 || trackNum>40) goto re_ask_track;
+		}
 
 		// go to track zero
+		x_DCOPC = 0;      // 0 = seek to track 0, 2 = read,
+						  // 3 = write, 4 = format, 5 = read address
+		x_DCDRV = driveNum; // 0..3
+		x_DCTRK = 0;     // >= 0
+		x_DCSEC = 0;      // >= 1
+		
+		printf("SEEKING TRACK 0... ");
+		x_dskcon_processSector(); /* seek to track 0 */
+		if (x_DCSTA!=0)
+			processError(x_DCSTA);
+	
+		printf("SUCCESS\n");
 		
 		// step in trackNum times
 		
+		x_DCOPC = 1;      // 0 = seek to track 0, 1 = step in, 2 = read,
+						  // 3 = write, 4 = format, 5 = read address
+		x_DCDRV = driveNum; // 0..3
+		x_DCSEC = 0;      // >= 1
+		x_DCTRK = 0; // >= 0
+		
+		byte i;
+		for (i=0; i<trackNum; i++)
+		{
+			printf("STEPPING TO TRACK %d, ", i+1);
+			x_dskcon_processSector(); /* step in */
+			if (x_DCSTA!=0)
+				processError(x_DCSTA);
+		
+			printf("SUCCESS: %d\n", x_DCTRK);
+		}
+
 		formatMFM();
 	
 		disableInterrupts();
@@ -525,7 +562,7 @@ main()
 		
 		cls(255);
 		printf("TRACK %d SEEN SECTOR STATISTICS\n", trackNum);
-		printf("TIMER DELAY: %d\n", ((unsigned)fm_timer_hi << 8) | fm_timer_lo);
+		printf("Drive: %d, TIMER DELAY: %d\n", driveNum, ((unsigned)fm_timer_hi << 8) | fm_timer_lo);
 		printf("\n");
 		printf("MFM    123456789111111111\n");
 		printf("SEC #           012345678\n");
@@ -542,7 +579,6 @@ main()
 		byte mfm_buf[20];
 		byte fm_buf[20];
 		
-		byte i;
 		for (i=0; i<20; i++)
 		{
 			mfm_buf[i] = 0;
