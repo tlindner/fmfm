@@ -27,7 +27,7 @@ extern unsigned char x_dskcon_driveEnableMasks[4];
 
 // Type used by fm_dskcon_init().
 //
-typedef interrupt void (*fm_dskcon_NmiServiceFunctionPointer)();
+// typedef interrupt void (*fm_dskcon_NmiServiceFunctionPointer)();
 
 
 // Function to be called first.
@@ -54,7 +54,7 @@ typedef interrupt void (*fm_dskcon_NmiServiceFunctionPointer)();
 
 // Function to be used as the NMI service routine.
 //
-interrupt void fm_dskcon_nmiService();
+// interrupt void fm_dskcon_nmiService();
 
 
 // Equivalent of DSKCON.
@@ -100,7 +100,7 @@ void fm_dskcon_processSector();
 //     }
 // }
 //
-void fm_dskcon_irqService();
+// void fm_dskcon_irßqService();
 
 
 #endif  /* _H_fm_dskcon */

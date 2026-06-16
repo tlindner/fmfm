@@ -13,10 +13,14 @@ LSTS    = $(SRCS:.c=.lst)
 MAPS    = $(SRCS:.c=.map)
 LINK    = $(SRCS:.c=.link)
 
+all: $(DSK)
+
+fmfm.o: fm-dskcon-standalone.h x-dskcon-standalone.h
+x-dskcon-standalone.o: x-dskcon-standalone.h
+fm-dskcon-standalone.o: fm-dskcon-standalone.h
+
 # Add CMOC options here if needed
 CFLAGS  = -i
-
-all: $(DSK)
 
 # Build executable
 $(TARGET): $(OBJS)

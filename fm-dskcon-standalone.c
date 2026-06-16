@@ -8,6 +8,7 @@
 
 #ifdef __CLANGD__
 #define interrupt
+#define __norts__
 #define asm(...)
 #endif
 
@@ -79,20 +80,20 @@ enum
 // }
 
 
-interrupt asm void fm_dskcon_nmiService()
-{
-#ifndef __CLANGD__
-    asm
-    {
-        LDA     x_NMIFLG      // GET NMI FLAG
-        BEQ     @nmiService_end  // RETURN IF NOT ACTIVE
-        LDX     x_DNMIVC      // GET NEW RETURN VECTOR
-        STX     10,S        // STORE AT STACKED PC SLOT ON STACK
-        CLR     x_NMIFLG      // RESET NMI FLAG
-@nmiService_end:
-    }
-#endif
-}
+// interrupt asm void fm_dskcon_nmiService()
+// {
+// #ifndef __CLANGD__
+//     asm
+//     {
+//         LDA     x_NMIFLG      // GET NMI FLAG
+//         BEQ     @nmiService_end  // RETURN IF NOT ACTIVE
+//         LDX     x_DNMIVC      // GET NEW RETURN VECTOR
+//         STX     10,S        // STORE AT STACKED PC SLOT ON STACK
+//         CLR     x_NMIFLG      // RESET NMI FLAG
+// @nmiService_end:
+//     }
+// #endif
+// }
 
 
 asm __norts__ void fm_dskcon_processSector()
@@ -269,7 +270,7 @@ LD82C   LDA     x_DCSEC       /* GET SECTOR NUMBER DESIRED */
         ldb     x_DCTRK			/* Load current track number */
         stb     1+FDCREG		/* Program it to track register */
         stb     3+FDCREG        /* Program it to sector register */
-        ldb     #$10			/* issue seek command */
+        ldb     #$10			/* issue nop seek command */
         stb     FDCREG          /* we need to guarantee a type I command to get index pulses */
         EXG     A,A             /* Pause */
         EXG     A,A             /* Pause */
@@ -346,21 +347,21 @@ LA7D3   LEAX    -1,X    /* DECREMENT X */
 }
 
 
-asm void fm_dskcon_irqService()
-{
-#ifndef __CLANGD__
-    asm
-    {
-        LDA     x_RDYTMR      // GET TIMER
-        BEQ     @end        // BRANCH IF NOT ACTIVE
-        DECA                // DECREMENT THE TIMER
-        STA     x_RDYTMR      // SAVE IT
-        BNE     @end        // BRANCH IF NOT TIME TO TURN OFF DISK MOTORS
-        LDA     x_DRGRAM      // = GET DSKREG IMAGE
-        ANDA    #$B0        // = TURN ALL MOTORS AND DRIVE SELECTS OFF
-        STA     x_DRGRAM      // = PUT IT BACK IN RAM IMAGE
-        STA     DSKREG      // SEND TO CONTROL REGISTER (MOTORS OFF)
-@end:
-    }
-#endif
-}
+// asm void fm_dskcon_irqService()
+// {
+// #ifndef __CLANGD__
+//     asm
+//     {
+//         LDA     x_RDYTMR      // GET TIMER
+//         BEQ     @end        // BRANCH IF NOT ACTIVE
+//         DECA                // DECREMENT THE TIMER
+//         STA     x_RDYTMR      // SAVE IT
+//         BNE     @end        // BRANCH IF NOT TIME TO TURN OFF DISK MOTORS
+//         LDA     x_DRGRAM      // = GET DSKREG IMAGE
+//         ANDA    #$B0        // = TURN ALL MOTORS AND DRIVE SELECTS OFF
+//         STA     x_DRGRAM      // = PUT IT BACK IN RAM IMAGE
+//         STA     DSKREG      // SEND TO CONTROL REGISTER (MOTORS OFF)
+// @end:
+//     }
+// #endif
+// }

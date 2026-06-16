@@ -6,6 +6,7 @@
 
 #ifdef __CLANGD__
 #define interrupt
+#define __norts__
 #define asm(...)
 #endif
 
@@ -64,12 +65,12 @@ unsigned long x_dskcon_init(x_dskcon_NmiServiceFunctionPointer newNMIService)
     x_DRGRAM = *(byte *)DRGRAM;
     x_NMIFLG = *(byte *)NMIFLG;
     x_DNMIVC = *(byte **)DNMIVC;
- 
+
 	x_DR0TRK[0] = *((byte *)DR0TRK + 0);
 	x_DR0TRK[1] = *((byte *)DR0TRK + 1);
 	x_DR0TRK[2] = *((byte *)DR0TRK + 2);
 	x_DR0TRK[3] = *((byte *)DR0TRK + 3);
-	
+
     // Redirect NMI to jump at newNMIService.
     //
     byte *isr = * (byte **) 0xFFFC;
@@ -93,12 +94,12 @@ void x_dskcon_shutdown(unsigned long initReturnValue)
 	*(byte *)DCSEC  = x_DCSEC;
 	*(byte **)DCBPT = x_DCBPT;
 	*(byte *)DCSTA  = x_DCSTA;
-	
+
 	*(byte *)RDYTMR = x_RDYTMR;
 	*(byte *)DRGRAM = x_DRGRAM;
 	*(byte *)NMIFLG = x_NMIFLG;
 	*(byte **)DNMIVC = (byte *)x_DNMIVC;
-	
+
 	*((byte *)DR0TRK + 0) = x_DR0TRK[0];
 	*((byte *)DR0TRK + 1) = x_DR0TRK[1];
 	*((byte *)DR0TRK + 2) = x_DR0TRK[2];
@@ -108,6 +109,7 @@ void x_dskcon_shutdown(unsigned long initReturnValue)
 
 interrupt asm void x_dskcon_nmiService()
 {
+#ifndef __CLANGD__
     asm
     {
         LDA     x_NMIFLG      // GET NMI FLAG
@@ -117,6 +119,7 @@ interrupt asm void x_dskcon_nmiService()
         CLR     x_NMIFLG      // RESET NMI FLAG
 @nmiService_end:
     }
+#endif
 }
 
 
@@ -126,6 +129,7 @@ asm __norts__ void x_dskcon_processSector()
      * This code uses the notation n+FDCREG because FDCREG+n gets expanded
      * to "FDCREG +n" by cpp, so the +n gets ignored as a comment.
      */
+#ifndef __CLANGD__
     asm
     {
         PSHS    Y,U     /* Preserve registers used by CMOC calling convention */
@@ -350,11 +354,13 @@ LA7D3   LEAX    -1,X    /* DECREMENT X */
 @x_dskcon_end:
         PULS    Y,U,PC  /* Restore registers used by CMOC calling convention */
     }
+#endif
 }
 
 
 asm void x_dskcon_irqService()
 {
+#ifndef __CLANGD__
     asm
     {
         LDA     x_RDYTMR      // GET TIMER
@@ -368,4 +374,5 @@ asm void x_dskcon_irqService()
         STA     DSKREG      // SEND TO CONTROL REGISTER (MOTORS OFF)
 @end:
     }
+#endif
 }

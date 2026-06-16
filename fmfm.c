@@ -111,14 +111,14 @@ unsigned build_track(byte *buf, int size,
     unsigned pos = 0;
     unsigned s, i, b;
 	unsigned sector_size = 128 << sector_size_code;
-	
+
 	/* count entries */
 	unsigned nentries = 0;
-	
+
 	while (track_template[nentries].count != DATA_END)
 	{
 		nentries++;
-	}	
+	}
 
     /* Gap I (index gap) */
     emit(buf, &pos, gap_byte, 32);
@@ -159,7 +159,7 @@ unsigned build_track(byte *buf, int size,
 		x_dskcon_shutdown(cookie);
 		exit(0);
 	}
-	
+
     /* Gap IV: fill to end of track */
     while (pos<size)
         buf[pos++] = gap_byte;
@@ -182,25 +182,17 @@ void formatFM()
 	x_DCDRV = driveNum; // 0..3
 	x_DCTRK = trackNum;     // >= 0
 	x_DCSEC = 0;      // >= 1
-	
-// 	printf("SEEKING TRACK 0... ");
-// 	fm_dskcon_processSector(); /* seek to track 0 */
-// 	if (x_DCSTA!=0)
-// 		processError(x_DCSTA);
-// 
-// 	printf("SUCCESS\n");
 
-	x_DCOPC = 4;      
+	x_DCOPC = 4;
 	x_DCBPT = track_buf;  // address of sector buffer
 
 	unsigned result;
 	result = build_track(track_buf, 6400/2, fm_track_template, trackNum, /*side*/0,
 		/*fill*/0x55, /*sectors_per_track*/17, /*sector_size_code*/0, 0xff);
 
-// 	x_DCTRK = 0;     // >= 0
 	printf("FORMATTING FM TRACK... ");
 	fm_dskcon_processSector();
-	
+
 	if (x_DCSTA != 0)
 		processError(x_DCSTA);
 
@@ -217,9 +209,9 @@ void fm_readSectorAddress(byte fm_buf[])
 	x_DCBPT = track_buf;  // address of sector buffer
 
 	int i;
-	
+
 	for (i=0; i<50; i++)
-	{	
+	{
 		fm_dskcon_processSector(); /* seek to track 0 */
 		fm_buf[track_buf[2]]++;
 		if (x_DCSTA!=0 )
@@ -230,7 +222,7 @@ void fm_readSectorAddress(byte fm_buf[])
 		locate(0,11);
 		printf("%c",progress[prog++]);
 		if(prog>6) prog = 0;
-		
+
 		/* bail early if nothing seen after 2 attempts */
 		if (i==1)
 		{
@@ -243,7 +235,7 @@ void fm_readSectorAddress(byte fm_buf[])
 
 	locate(0,11);
 	printf(" ");
-	
+
 	return;
 }
 
@@ -255,18 +247,18 @@ void mfm_readSectorAddress(byte mfm_buf[])
 	x_DCTRK = trackNum;     // >= 0
 	x_DCSEC = 0;      // >= 1
 	x_DCBPT = track_buf;  // address of sector buffer
-	
+
 	int i;
 	prog = 0;
 	for (i=0; i<50; i++)
-	{	
+	{
 		x_dskcon_processSector(); /* seek to track 0 */
 		mfm_buf[track_buf[2]]++;
 		if (x_DCSTA != 0)
 		{
 			mfm_buf[track_buf[2]] = 0xff;
 		}
-		
+
 		locate(0,5);
 		printf("%c", progress[prog++]);
 		if (prog>6) prog = 0;
@@ -283,7 +275,7 @@ void mfm_readSectorAddress(byte mfm_buf[])
 
 	locate(0,5);
 	printf(" ");
-	
+
 	return;
 }
 
@@ -294,7 +286,7 @@ void mfm_readSector(byte mfm_buf[])
 	x_DCDRV = driveNum;      // 0..3
 	x_DCTRK = trackNum;     // >= 0
 	x_DCBPT = track_buf;  // address of sector buffer
-	
+
 	byte i;
 	for (i=0; i<20; i++)
 	{
@@ -324,7 +316,7 @@ void fm_readSector(byte fm_buf[])
 	x_DCDRV = driveNum; // 0..3
 	x_DCTRK = trackNum;     // >= 0
 	x_DCBPT = track_buf;  // address of sector buffer
-	
+
 	byte i;
 	for (i=0; i<20; i++)
 	{
@@ -354,15 +346,7 @@ void formatMFM()
 	x_DCDRV = driveNum; // 0..3
 	x_DCTRK = trackNum;     // >= 0
 	x_DCSEC = 0;      // >= 1
-	
-// 	printf("SEEKING TRACK 0... ");
-// 	x_dskcon_processSector(); /* seek to track 0 */
-// 	if (x_DCSTA != 0)
-// 		processError(x_DCSTA);
-// 
-// 	printf("SUCCESS\n");
-
-	x_DCOPC = 4;      
+	x_DCOPC = 4;
 	x_DCBPT = track_buf;  // address of sector buffer
 
 	unsigned result;
@@ -372,7 +356,7 @@ void formatMFM()
 	x_DCTRK = trackNum;     // >= 0
 	printf("FORMATTING MFM TRACK... ");
 	x_dskcon_processSector();
-	
+
 	if (x_DCSTA!=0)
 		processError(x_DCSTA);
 
@@ -384,10 +368,10 @@ interrupt void FIRQRoutine(void)
 #ifndef __CLANGD__
     asm
     {
-    	
-        lda     #$d8          // Load force interrupt command
-        sta     FDCREG        // store it
-        clr		$ff93         // stop timer
+       lda     #$d8          // Load force interrupt command
+       sta     FDCREG        // store it
+       clr		$ff93         // stop timer
+       lda		$ff93         // clear status
     }
 #endif
 }
@@ -424,11 +408,11 @@ void stopFIRQ(void)
 #ifndef __CLANGD__
 	asm
 	{
-		lda #$00
+		lda #$00     /* turn off all FIRQs */
 		sta $ff93
-		lda #$cc
+		lda #$cc     /* Load standard config */
 		sta $ff90
-		lda $ff93 /* clear pending */
+		lda $ff93    /* clear pending */
 	}
 #endif
 }
@@ -436,7 +420,7 @@ void stopFIRQ(void)
 void armMotorTimeout(byte seconds)
 {
     /* Poke Disk BASIC's RDYTMR at $0985.
-     * Value × 1/60s ticks until motor off. */
+     * Value  1/60s ticks until motor off. */
     * (byte *) 0x0985 = (byte)(seconds * 60);
 }
 
@@ -473,9 +457,9 @@ main()
 	{
 		n = atoi(response);
 		driveNum = (byte)n;
-		
-		if (driveNum<0 || driveNum>3) goto re_ask_drive;
 	}
+
+	if (driveNum<0 || driveNum>3) goto re_ask_drive;
 
 	while (1)
 	{
@@ -485,9 +469,7 @@ main()
 		if (response[0] != '\0')
 		{
 			n = atoi(response);
-			
-			if (n<0 || n>4095) goto re_ask_delay;
-			
+
 			if (n!=0)
 			{
 				fm_timer_hi = (byte)(n>>8);
@@ -499,7 +481,9 @@ main()
 				break;
 			}
 		}
-	
+
+		if (n<0 || n>4095) goto re_ask_delay;
+
 		re_ask_track:
 		printf("TRACK NUMBER (%d)? ", trackNum);
 		char *response = readline();
@@ -507,9 +491,9 @@ main()
 		{
 			n = atoi(response);
 			trackNum = (byte)n;
-			
-			if (trackNum<0 || trackNum>40) goto re_ask_track;
 		}
+
+		if (trackNum<0 || trackNum>40) goto re_ask_track;
 
 		// go to track zero
 		x_DCOPC = 0;      // 0 = seek to track 0, 2 = read,
@@ -517,22 +501,22 @@ main()
 		x_DCDRV = driveNum; // 0..3
 		x_DCTRK = 0;     // >= 0
 		x_DCSEC = 0;      // >= 1
-		
+
 		printf("SEEKING TRACK 0... ");
 		x_dskcon_processSector(); /* seek to track 0 */
 		if (x_DCSTA!=0)
 			processError(x_DCSTA);
-	
+
 		printf("SUCCESS\n");
-		
+
 		// step in trackNum times
-		
+
 		x_DCOPC = 1;      // 0 = seek to track 0, 1 = step in, 2 = read,
 						  // 3 = write, 4 = format, 5 = read address
 		x_DCDRV = driveNum; // 0..3
 		x_DCSEC = 0;      // >= 1
 		x_DCTRK = 0; // >= 0
-		
+
 		byte i;
 		for (i=0; i<trackNum; i++)
 		{
@@ -540,12 +524,12 @@ main()
 			x_dskcon_processSector(); /* step in */
 			if (x_DCSTA!=0)
 				processError(x_DCSTA);
-		
+
 			printf("SUCCESS: %d\n", x_DCTRK);
 		}
 
 		formatMFM();
-	
+
 		disableInterrupts();
 		char *irqVector = * (char **) 0xFFF6;
 		*irqVector = 0x7E;  // extended JMP instruction
@@ -553,16 +537,17 @@ main()
 		setGIMETimer(0);
 		setupFIRQ();
 		enableInterrupts();
-		
+
 		formatFM();
-	
+
 		disableInterrupts();
+		setGIMETimer(0);
 		stopFIRQ();
 		enableInterrupts();
-		
+
 		cls(255);
+		printf("DRIVE: %d, TIMER DELAY: %d\n", driveNum, ((unsigned)fm_timer_hi << 8) | fm_timer_lo);
 		printf("TRACK %d SEEN SECTOR STATISTICS\n", trackNum);
-		printf("Drive: %d, TIMER DELAY: %d\n", driveNum, ((unsigned)fm_timer_hi << 8) | fm_timer_lo);
 		printf("\n");
 		printf("MFM    123456789111111111\n");
 		printf("SEC #           012345678\n");
@@ -575,40 +560,40 @@ main()
 		printf("       ------------------\n");
 		printf("COUNT  ------------------\n");
 		printf("DATA   ------------------\n");
-		
+
 		byte mfm_buf[20];
 		byte fm_buf[20];
-		
+
 		for (i=0; i<20; i++)
 		{
 			mfm_buf[i] = 0;
 			fm_buf[i] = 0;
 		}
-		
+
 		mfm_readSectorAddress(mfm_buf);
-	
+
 		for (i=1; i<20; i++)
 		{
 			displaySectorAddress(i, 5, mfm_buf[i]);
 		}
-	
+
 		mfm_readSector(mfm_buf);
-		
+
 		fm_readSectorAddress(fm_buf);
-	
+
 		for (i=1; i<20; i++)
 		{
 			displaySectorAddress(i, 12, fm_buf[i]);
 		}
-	
+
 		fm_readSector(fm_buf);
-	
+
 		armMotorTimeout(2);
-		
+
 		locate(0,14);
 	}
 
 	x_dskcon_shutdown(cookie);
-	
+
 	return 0;
 }
