@@ -7,8 +7,13 @@
 #ifndef _H_x_dskcon
 #define _H_x_dskcon
 
-#include <cmoc.h>
+#ifdef __CLANGD__
+#define interrupt
+#define __norts__
+#define asm(...)
+#endif
 
+#include <cmoc.h>
 
 extern unsigned char x_DCOPC;  /* DSKCON OPERATION CODE 0-3 */
 extern unsigned char x_DCDRV;  /* DSKCON DRIVE NUMBER 0—3 */
@@ -25,6 +30,7 @@ extern void *x_DNMIVC;   /* NMI VECTOR: WHERE TO JUMP FOLLOWING AN NMI */
 
 extern unsigned char x_dskcon_driveEnableMasks[4];
 
+asm x_clear_drgram(void);
 
 // Type used by x_dskcon_init().
 //

@@ -4,12 +4,6 @@
     This file is in the public domain, except the parts taken from DECB.
 */
 
-#ifdef __CLANGD__
-#define interrupt
-#define __norts__
-#define asm(...)
-#endif
-
 #include "x-dskcon-standalone.h"
 
 enum
@@ -106,6 +100,13 @@ void x_dskcon_shutdown(unsigned long initReturnValue)
 	*((byte *)DR0TRK + 3) = x_DR0TRK[3];
 }
 
+asm x_clear_drgram(void)
+{
+	asm
+	{
+		clr x_DRGRAM
+	}
+}
 
 interrupt asm void x_dskcon_nmiService()
 {
@@ -133,7 +134,7 @@ asm __norts__ void x_dskcon_processSector()
     asm
     {
         PSHS    Y,U     /* Preserve registers used by CMOC calling convention */
-        LDA     #$05    /* GET RETRY COUNT AND */
+        LDA     #$02    /* GET RETRY COUNT AND */
         PSHS    A       /* SAVE IT ON THE STACK */
 LD765   CLR     x_RDYTMR  /* RESET DRIVE NOT READY TIMER */
         LDB     x_DCDRV   /* GET DRIVE NUMBER */
