@@ -45,6 +45,9 @@ byte fm_DR0TRK[4];    /* CURRENT TRACK NUMBER, DRIVES 0,1,2,3 */
 byte fm_NMIFLG;    /* NMI FLAG: 0=DON'T VECTOR <>0=YECTOR OUT */
 void *fm_DNMIVC;   /* NMI VECTOR: WHERE TO JUMP FOLLOWING AN NMI */
 
+byte fm_partialTrack = 1;
+byte fm_partialAborted;
+
 byte fm_saved_nmi[3];
 byte fm_saved_firq[3];
 
@@ -135,6 +138,7 @@ interrupt asm void fm_dskcon_firqService()
         LDX     fm_DNMIVC      // GET NEW RETURN VECTOR
         STX     1,S        // STORE AT STACKED PC SLOT ON STACK
         CLR     fm_NMIFLG      // RESET NMI FLAG
+        INC     fm_partialAborted
        clr		$ff93         // stop timer
        lda		$ff93         // clear status
 @firqService_end:
@@ -344,6 +348,8 @@ LD82C   LDA     fm_DCSEC       /* GET SECTOR NUMBER DESIRED */
         COM     fm_NMIFLG  /* NMI FLAG = $FF: ENABLE NMI VECTOR */
         cmpb    #$f0     /* check for write track */
         bne     LD82E
+        tst     fm_partialTrack
+        beq     LD82E
 ; Special write track code to implement an INTRQ after writing a half track
 ; 1. Wait until index pulse.
 ; 2. Wait for half track rotation
@@ -415,7 +421,8 @@ LD88A
         EXG     A,A     /* FOR SIDE 0, NO 15 MS DELAY, DISABLE SIDE SELECT */
         EXG     A,A     /* COMPARE, WRITE DATA ADDRESS MARK (FB) - WAIT FOR STATUS */
 ; BRANCH HERE ON COMPLETION OF SECTOR READ/WRITE
-LD88B   ANDCC   #$AF    /* ENABLE IRQ, FIRO */
+LD88B   CLR     fm_NMIFLG  /* Polled completion must disarm the saved return vector */
+        ANDCC   #$AF    /* ENABLE IRQ, FIRO */
         LDA     FDCREG  /* GET STATUS & KEEP WRITE PROTECT, RECORD TYPE/WRITE */
         ANDA    #$7C    /* FAULT, RECORD NOT FOUND, CRC ERROR OR LOST DATA */
         STA     fm_DCSTA   /* SAVE IN DSKCON STATUS */

@@ -10,6 +10,7 @@
 # Final binaries
 fmfm
 fmfm.dsk
+sectwrite
 
 # macOS
 .DS_Store

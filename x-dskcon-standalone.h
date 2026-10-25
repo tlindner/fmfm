@@ -15,6 +15,11 @@
 
 #include <cmoc.h>
 
+// Set before init, while interrupts are masked, for a timer-aborted MFM track.
+// Shutdown restores the FIRQ vector; the caller must disarm the GIME first.
+extern unsigned char x_partialTrack;
+extern unsigned char x_partialAborted;
+
 extern unsigned char x_DCOPC;  /* DSKCON OPERATION CODE 0-3 */
 extern unsigned char x_DCDRV;  /* DSKCON DRIVE NUMBER 0—3 */
 extern unsigned char x_DCTRK;  /* DSKCON TRACK NUMBER 0—34 */
@@ -62,6 +67,7 @@ void x_dskcon_shutdown(unsigned long initReturnValue);
 // Function to be used as the NMI service routine.
 //
 interrupt void x_dskcon_nmiService();
+interrupt void x_dskcon_firqService();
 
 
 // Equivalent of DSKCON.

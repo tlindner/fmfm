@@ -42,6 +42,14 @@ byte x_DR0TRK[4];    /* CURRENT TRACK NUMBER, DRIVES 0,1,2,3 */
 byte x_NMIFLG;    /* NMI FLAG: 0=DON'T VECTOR <>0=YECTOR OUT */
 void *x_DNMIVC;   /* NMI VECTOR: WHERE TO JUMP FOLLOWING AN NMI */
 
+extern unsigned char fm_timer_hi;
+extern unsigned char fm_timer_lo;
+byte x_partialTrack;
+byte x_partialAborted;
+byte x_saved_firq[3];
+byte x_firq_installed;
+void *x_DFIRQVC;
+
 byte x_dskcon_driveEnableMasks[4] = { 0x01, 0x02, 0x04, 0x40 };
 
 
@@ -72,6 +80,14 @@ unsigned long x_dskcon_init(x_dskcon_NmiServiceFunctionPointer newNMIService)
     *isr = 0x7E;  // JMP
     * (x_dskcon_NmiServiceFunctionPointer *) (isr + 1) = newNMIService;
 
+    x_firq_installed = x_partialTrack;
+    if (x_firq_installed)
+    {
+        isr = *(byte **)0xFFF6;
+        memcpy(x_saved_firq, isr, 3);
+        *isr = 0x7E;
+        *(x_dskcon_NmiServiceFunctionPointer *)(isr + 1) = x_dskcon_firqService;
+    }
     return retVal;
 }
 
@@ -81,6 +97,12 @@ void x_dskcon_shutdown(unsigned long initReturnValue)
     byte *isr = * (byte **) 0xFFFC;
     isr[0] = (byte) (initReturnValue >> 16);
     * (word *) (isr + 1) = (word) initReturnValue;
+
+    if (x_firq_installed)
+    {
+        memcpy(*(byte **)0xFFF6, x_saved_firq, 3);
+        x_firq_installed = 0;
+    }
 
 	*(byte *)DCOPC  = x_DCOPC;
 	*(byte *)DCDRV  = x_DCDRV;
@@ -123,6 +145,26 @@ interrupt asm void x_dskcon_nmiService()
 #endif
 }
 
+
+/* FIRQ stacks CC and PC only.  Redirect to the abort path rather than
+ * resuming the HALT-driven transfer with clobbered A/X registers. */
+interrupt asm void x_dskcon_firqService()
+{
+#ifndef __CLANGD__
+    asm
+    {
+        LDA     x_NMIFLG
+        BEQ     @firq_end
+        LDX     x_DFIRQVC
+        STX     1,S
+        CLR     x_NMIFLG
+        INC     x_partialAborted
+        CLR     $FF93
+        LDA     $FF93
+@firq_end:
+    }
+#endif
+}
 
 asm __norts__ void x_dskcon_processSector()
 {
@@ -195,7 +237,10 @@ LD7B1   LDA     #120    /* 120*1/60 = 2 SECONDS (1/60 SECOND FOR EACH IRQ INTERR
         LBRA    @x_dskcon_end  /* EXIT DSKCON */
 x_dskcon_cmd4
 		LBSR	LD7F6	/* COMMAND 4: Write Track */
-		bra		LD7A0
+        TST     x_partialTrack
+        BEQ     LD7A0
+        PULS    A               /* Discard retry count */
+        BRA     LD7B1
 x_dskcon_cmd3
         LBSR    LD7FB   /* COMMAND 3: WRITE SECTOR */
         BRA     LD7A0
@@ -298,6 +343,8 @@ LD82C   LDA     x_DCSEC       /* GET SECTOR NUMBER DESIRED */
         STA     2+FDCREG    /* SEND TO 1793 SECTOR REGISTER */
         LEAX    LD88B,PCR   /* POINT X TO ROUTINE TO BE VECTORED */
         STX     x_DNMIVC      /* TO BY NMI UPON COMPLETION OF DISK I/O AND SAVE VECTOR */
+        LEAX    LD88A,PCR
+        STX     x_DFIRQVC
         LDX     x_DCBPT       /* POINT X TO I/O BUFFER */
         LDA     FDCREG      /* RESET INTRQ (FDC INTERRUPT REQUEST) */
         LDA     x_DRGRAM      /* GET DSKREG IMAGE */
@@ -305,8 +352,37 @@ LD82C   LDA     x_DCSEC       /* GET SECTOR NUMBER DESIRED */
         PULS    B       /* GET READ/WRITE COMMAND FROM STACK */
         LDY     #0      /* ZERO OUT Y - TIMEOUT INITIAL VALUE */
         LDU     #FDCREG /* U POINTS TO 1793 INTERFACE REGISTERS */
-        COM     x_NMIFLG  /* NMI FLAG = $FF: ENABLE NMI VECTOR */
+        CLR     x_NMIFLG  /* Do not vector on the preliminary seek's INTRQ */
+        CMPB    #$F0
+        BNE     LD82E
+        TST     x_partialTrack
+        BEQ     LD82E
+        ORCC    #$10            /* Keep IRQ masked, leave timer FIRQ enabled */
+        LDB     x_DCTRK
+        STB     1+FDCREG
+        STB     3+FDCREG
+        LDB     #$10            /* Type I status supplies the index signal */
+        STB     FDCREG
+        EXG     A,A
+        EXG     A,A
+LD82I   LDB     ,U
+        BITB    #$02
+        BEQ     LD82I
+        LDY     #$2BB2
+LD82D   LEAY    -1,Y
+        BNE     LD82D
+        LDA     FDCREG          /* Clear the seek's pending INTRQ before arming NMI */
+        LDA     x_DRGRAM        /* Restore the HALT-loop control byte in A */
+        ORA     #$80
+        COM     x_NMIFLG
+        LDB     fm_timer_lo
+        STB     $FF95
+        LDB     fm_timer_hi
+        STB     $FF94
+        LDB     #$F0
+        BRA     LD82F
 LD82E   ORCC    #$50    /* DISABLE FIRQ,IRQ */
+        COM     x_NMIFLG        /* Arm normal transfer completion */
 LD82F   STB     FDCREG  /* SEND READ/WRITE COMMAND TO 1793: SINGLE RECORD, COMPARE */
         EXG     A,A     /* FOR SIDE 0, NO 15 MS DELAY, DISABLE SIDE SELECT */
         EXG     A,A     /* COMPARE, WRITE DATA ADDRESS MARK (FB) - WAIT FOR STATUS */
@@ -338,6 +414,11 @@ LD881   LDB     3+FDCREG    /* GET DATA BYTE FROM 1793 DATA REGISTER */
         STB     ,X+         /* PUT IT IN RAM */
         STA     DSKREG  /* REPROGRAM FDC CONTROL REGISTER */
         BRA     LD881   /* KEEP GETTING DATA */
+; TIMER FIRQ ABORT: Force Interrupt also clears the cartridge HALT latch.
+LD88A   LDA     #$D8
+        STA     FDCREG
+        EXG     A,A
+        EXG     A,A
 ; BRANCH HERE ON COMPLETION OF SECTOR READ/WRITE
 LD88B   ANDCC   #$AF    /* ENABLE IRQ, FIRO */
         LDA     FDCREG  /* GET STATUS & KEEP WRITE PROTECT, RECORD TYPE/WRITE */

@@ -14,12 +14,24 @@ enum
     FDCREG = 0xFF48,   // 1793 CONTROL REGISTER
 };
 
-byte *screen_buf = (byte *)0x400;
-
 byte prog;
-const char *progress = "\\!/-\\!";
+const char *progress = "|/-\\";
 byte driveNum;
 byte trackNum;
+byte fmFormatStatus;
+byte reverseMode;
+byte mfmFill = 0x55;
+byte partialFormatStatus;
+byte partialAborted;
+typedef struct {
+    byte ioErrors;
+    byte badIds;
+    byte status;
+    byte id[4];
+} AddressStats;
+AddressStats mfmStats;
+AddressStats fmStats;
+byte formatStarted;
 
 byte fm_timer_hi = 0x0C;
 byte fm_timer_lo = 0x44;
@@ -65,7 +77,7 @@ static const TrackEntry fm_track_template[] = {
     { 11, 0xFF },       /* Gap II (post-ID gap) */
     {  6, 0x00 },       /* Sync field */
     {  1, WT_DAM },     /* Data Address Mark (0xFB) */
-    { SPLICE_DATA, 0 }, /* >> 256 bytes of sector data spliced here << */
+    { SPLICE_DATA, 0 }, /* >> 128 bytes of sector data spliced here << */
     {  1, WT_CRC },     /* Write CRC */
     { 27, 0xFF },       /* Gap III (post-data gap) */
     { DATA_END, 0 }
@@ -84,9 +96,15 @@ void stopMotor(void)
 #endif
 }
 
-static void emit(byte *buf, unsigned *pos, byte b, unsigned n)
+static void emit(byte *buf, unsigned *pos, unsigned size, byte b, unsigned n)
 {
     unsigned i;
+    if (*pos > size || n > size - *pos)
+    {
+        printf("TRACK BUFFER TOO SMALL\n");
+        stopMotor();
+        exit(1);
+    }
     for (i=0; i<n; i++)
         buf[(*pos)++] = b;
 }
@@ -108,7 +126,7 @@ unsigned build_track(byte *buf, int size,
                      byte gap_byte)
 {
     unsigned pos = 0;
-    unsigned s, i, b;
+    unsigned s, i;
 	unsigned sector_size = 128 << sector_size_code;
 
 	/* count entries */
@@ -120,7 +138,7 @@ unsigned build_track(byte *buf, int size,
 	}
 
     /* Gap I (index gap) */
-    emit(buf, &pos, gap_byte, 32);
+    emit(buf, &pos, size, gap_byte, 32);
 
     for (s = 0; s < sectors_per_track; s++) {
         for (i = 0; i < nentries; i++) {
@@ -134,33 +152,26 @@ unsigned build_track(byte *buf, int size,
 
             switch (count) {
                 case SPLICE_ID:
-                    buf[pos++] = track;
-                    buf[pos++] = side;
-                    buf[pos++] = (byte)(s + 1);  /* sector number, 1-based */
-                    buf[pos++] = sector_size_code;
+                    emit(buf, &pos, size, track, 1);
+                    emit(buf, &pos, size, side, 1);
+                    emit(buf, &pos, size, (byte)(s + 1), 1);
+                    emit(buf, &pos, size, sector_size_code, 1);
                     break;
 
                 case SPLICE_DATA:
-                    for (b = 0; b < sector_size; b++)
-                        buf[pos++] = fill;
+                    emit(buf, &pos, size, fill, sector_size);
                     break;
 
                 default:
-                    emit(buf, &pos, val, count ? count : (unsigned int)256);
+                    emit(buf, &pos, size, val, count ? count : (unsigned int)256);
                     break;
             }
         }
     }
 
-	if (pos>size)
-	{
-		printf( "BUFFER OVERFLOW BY: %d BYTES\n", pos-size);
-		exit(0);
-	}
-
-    /* Gap IV: fill to end of track */
-    while (pos<size)
-        buf[pos++] = gap_byte;
+    /* Gap IV: fill to end of transfer buffer.  Each F7 command consumes
+     * two on-disk byte times, so buffer length is not track length. */
+    emit(buf, &pos, size, gap_byte, size - pos);
 
     return pos;
 }
@@ -169,11 +180,19 @@ void processError(byte error)
 {
 	printf("\nERROR: $%02x\n", error);
 	stopMotor();
-	exit(0);
+	exit(1);
 }
 
-void formatFM()
+void setGIMETimer(unsigned value);
+void stopFIRQ(void);
+void setupFIRQ(void);
+
+void formatFM(byte partial)
 {
+    build_track(track_buf, 6400/2, fm_track_template, trackNum, /*side*/0,
+        /*fill*/0x55, /*sectors_per_track*/(partial ? 17 : 16), /*sector_size_code*/0, 0xff);
+    fm_partialTrack = partial;
+    fm_partialAborted = 0;
     fm_dskcon_init(fm_dskcon_nmiService, fm_dskcon_firqService);
 
 	fm_DCOPC = 0;      // 0 = seek to track 0, 2 = read,
@@ -185,24 +204,61 @@ void formatFM()
 	fm_DCOPC = 4;
 	fm_DCBPT = track_buf;  // address of sector buffer
 
-	unsigned result;
-	result = build_track(track_buf, 6400/2, fm_track_template, trackNum, /*side*/0,
-		/*fill*/0x55, /*sectors_per_track*/17, /*sector_size_code*/0, 0xff);
+
 
 	printf("FORMATTING FM TRACK... ");
 	fm_dskcon_processSector();
 
-	fm_DCSTA &= ~0x04; // clear lost data
+    disableInterrupts();
+    setGIMETimer(0);
+    stopFIRQ();
+    enableInterrupts();
+    fmFormatStatus = fm_DCSTA; /* Preserve the complete DSKCON status. */
 	
-	if (fm_DCSTA != 0)
+    if (partial)
+    {
+        partialFormatStatus = fm_DCSTA;
+        partialAborted = fm_partialAborted;
+    }
+	if (fm_DCSTA & (partial ? ~0x04 : 0xff))
 	{
 		fm_dskcon_shutdown();
 		processError(fm_DCSTA);
 	}
 	
-	printf("SUCCESS\n");
+	printf("DONE, STATUS $%02X\n", fmFormatStatus);
 	
 	fm_dskcon_shutdown();
+}
+
+static void recordAddress(byte counts[], byte status, byte sizeCode, AddressStats *stats)
+{
+    byte sector = track_buf[2];
+    stats->status = status;
+    memcpy(stats->id, track_buf, 4);
+    if (status)
+    {
+        ++stats->ioErrors;
+        return;
+    }
+    if (track_buf[0] != trackNum || track_buf[1] != 0 ||
+        sector < 1 || sector > (sizeCode ? 18 : 17) || track_buf[3] != sizeCode)
+    {
+        ++stats->badIds;
+        return;
+    }
+    ++counts[sector];
+}
+
+static char dataResult(byte status, unsigned size, byte fill)
+{
+    unsigned i;
+    if (status)
+        return 'E'; /* Any controller error, not necessarily a CRC error. */
+    for (i = 0; i < size; ++i)
+        if (track_buf[i] != fill)
+            return 'M';
+    return '.';
 }
 
 void fm_readSectorAddress(byte fm_buf[])
@@ -216,28 +272,18 @@ void fm_readSectorAddress(byte fm_buf[])
 	fm_DCBPT = track_buf;  // address of sector buffer
 
 	int i;
+	prog = 0;
 
 	for (i=0; i<50; i++)
 	{
-		fm_dskcon_processSector(); /* seek to track 0 */
-		fm_buf[track_buf[2]]++;
-		if (fm_DCSTA!=0 )
-		{
-			fm_buf[track_buf[2]] = 0xff;
-		}
+        memset(track_buf, 0, 6);
+        fm_dskcon_processSector();
+        recordAddress(fm_buf, fm_DCSTA, 0, &fmStats);
 
 		locate(0,11);
 		printf("%c",progress[prog++]);
-		if(prog>6) prog = 0;
+		if(prog >= 4) prog = 0;
 
-		/* bail early if nothing seen after 2 attempts */
-		if (i==1)
-		{
-			byte j, found = 0;
-			for (j=1; j<20; j++)
-				if (fm_buf[j]) found = 1;
-			if (!found) break;
-		}
 	}
 
 	locate(0,11);
@@ -261,25 +307,14 @@ void mfm_readSectorAddress(byte mfm_buf[])
 	prog = 0;
 	for (i=0; i<50; i++)
 	{
-		x_dskcon_processSector(); /* seek to track 0 */
-		mfm_buf[track_buf[2]]++;
-		if (x_DCSTA != 0)
-		{
-			mfm_buf[track_buf[2]] = 0xff;
-		}
+        memset(track_buf, 0, 6);
+        x_dskcon_processSector();
+        recordAddress(mfm_buf, x_DCSTA, 1, &mfmStats);
 
 		locate(0,5);
 		printf("%c", progress[prog++]);
-		if (prog>6) prog = 0;
+		if (prog >= 4) prog = 0;
 
-		/* bail early if nothing seen after 2 attempts */
-		if (i==1)
-		{
-			byte j, found = 0;
-			for (j=1; j<20; j++)
-				if (mfm_buf[j]) found = 1;
-			if (!found) break;
-		}
 	}
 
 	locate(0,5);
@@ -299,21 +334,15 @@ void mfm_readSector(byte mfm_buf[])
 	x_DCBPT = track_buf;  // address of sector buffer
 
 	byte i;
-	for (i=0; i<20; i++)
+	for (i=1; i<=18; i++)
 	{
 		if (mfm_buf[i]>0)
 		{
-			x_DCSEC = i;      // >= 1
-			x_dskcon_processSector();
-			locate(i+6,7);
-			if (x_DCSTA!=0)
-			{
-				printf("E");
-			}
-			else
-			{
-				printf(".");
-			}
+            x_DCSEC = i;
+            memset(track_buf, 0, 256);
+            x_dskcon_processSector();
+            locate(i+6,7);
+            printf("%c", dataResult(x_DCSTA, 256, mfmFill));
 		}
 	}
 
@@ -331,30 +360,35 @@ void fm_readSector(byte fm_buf[])
 	fm_DCBPT = track_buf;  // address of sector buffer
 
 	byte i;
-	for (i=0; i<20; i++)
+	for (i=1; i<=17; i++)
 	{
 		if (fm_buf[i]>0)
 		{
-			fm_DCSEC = i;      // >= 1
-			fm_dskcon_processSector();
-			locate(i+6,13);
-			if (fm_DCSTA!=0)
-			{
-				printf("E");
-			}
-			else
-			{
-				printf(".");
-			}
+            fm_DCSEC = i;
+            memset(track_buf, 0, 128);
+            fm_dskcon_processSector();
+            locate(i+6,13);
+            printf("%c", dataResult(fm_DCSTA, 128, 0x55));
 		}
 	}
 
 	fm_dskcon_shutdown();
 }
 
-void formatMFM()
+void formatMFM(byte partial)
 {
+    build_track(track_buf, 6400, mfm_track_template, trackNum, /*side*/0,
+        /*fill*/mfmFill, /*sectors_per_track*/18, /*sector_size_code*/1, GAP_BYTE);
+    disableInterrupts();
+    x_partialTrack = partial;
+    x_partialAborted = 0;
     unsigned long cookie = x_dskcon_init(x_dskcon_nmiService);
+    if (partial)
+    {
+        setGIMETimer(0);
+        setupFIRQ();
+    }
+    enableInterrupts();
 
 	x_DCOPC = 0;      // 0 = seek to track 0, 2 = read,
 					  // 3 = write, 4 = format, 5 = read address
@@ -364,36 +398,93 @@ void formatMFM()
 	x_DCOPC = 4;
 	x_DCBPT = track_buf;  // address of sector buffer
 
-	unsigned result;
-	result = build_track(track_buf, 6400, mfm_track_template, trackNum, /*side*/0,
-		/*fill*/0x55, /*sectors_per_track*/18, /*sector_size_code*/1, GAP_BYTE);
+
 
 	x_DCTRK = trackNum;     // >= 0
 	printf("FORMATTING MFM TRACK... ");
 	x_dskcon_processSector();
 
-	if (x_DCSTA!=0)
+    disableInterrupts();
+    if (partial)
+    {
+        setGIMETimer(0);
+        stopFIRQ();
+        partialFormatStatus = x_DCSTA;
+        partialAborted = x_partialAborted;
+    }
+    x_dskcon_shutdown(cookie);
+    x_partialTrack = 0;
+    enableInterrupts();
+	if (x_DCSTA & (partial ? ~0x04 : 0xff))
 	{
-		x_dskcon_shutdown(cookie);
 		processError(x_DCSTA);
 	}
 
-	printf("SUCCESS\n");
-
-	x_dskcon_shutdown(cookie);
+	printf("DONE, STATUS $%02X\n", x_DCSTA);
 }
 
-interrupt void FIRQRoutine(void)
+/* Do not overwrite the baseline until we know the full MFM format worked.
+ * This also distinguishes transfer failures from FM splice/timer failures. */
+static void verifyMFMFormat(void)
 {
-#ifndef __CLANGD__
-    asm
+    unsigned long cookie = x_dskcon_init(x_dskcon_nmiService);
+    byte sector;
+    x_DCOPC = 2;
+    x_DCDRV = driveNum;
+    x_DCTRK = trackNum;
+    x_DCBPT = track_buf;
+    printf("VERIFYING MFM BEFORE FM...\n");
+    for (sector = 1; sector <= 18; ++sector)
     {
-       lda     #$d8          // Load force interrupt command
-       sta     FDCREG        // store it
-       clr		$ff93         // stop timer
-       lda		$ff93         // clear status
+        char result;
+        x_DCSEC = sector;
+        memset(track_buf, 0, 256);
+        x_dskcon_processSector();
+        result = dataResult(x_DCSTA, 256, mfmFill);
+        if (result != '.')
+        {
+            byte status = x_DCSTA;
+            x_dskcon_shutdown(cookie);
+            printf("MFM BASELINE FAILED SEC %u\n", sector);
+            printf("STATUS %02X RESULT %c\n", status, result);
+            printf("FM WRITE WAS NOT STARTED\n");
+            stopMotor();
+            exit(1);
+        }
     }
-#endif
+    x_dskcon_shutdown(cookie);
+    printf("MFM BASELINE: 18 SECTORS OK\n");
+}
+
+static void verifyFMFormat(void)
+{
+    byte sector;
+    fm_dskcon_init(fm_dskcon_nmiService, fm_dskcon_firqService);
+    fm_DCOPC = 2;
+    fm_DCDRV = driveNum;
+    fm_DCTRK = trackNum;
+    fm_DCBPT = track_buf;
+    printf("VERIFYING FM BEFORE MFM...\n");
+    for (sector = 1; sector <= 16; ++sector)
+    {
+        char result;
+        fm_DCSEC = sector;
+        memset(track_buf, 0, 128);
+        fm_dskcon_processSector();
+        result = dataResult(fm_DCSTA, 128, 0x55);
+        if (result != '.')
+        {
+            byte status = fm_DCSTA;
+            fm_dskcon_shutdown();
+            printf("FM BASELINE FAILED SEC %u\n", sector);
+            printf("STATUS %02X RESULT %c\n", status, result);
+            printf("MFM WRITE WAS NOT STARTED\n");
+            stopMotor();
+            exit(1);
+        }
+    }
+    fm_dskcon_shutdown();
+    printf("FM BASELINE: 16 SECTORS OK\n");
 }
 
 void setGIMETimer(unsigned value)
@@ -454,65 +545,77 @@ void displaySectorAddress(byte offset, byte row, byte value)
 	{
 		printf("%d", value);
 	}
-	else if (value==0xff)
-	{
-		printf("E");
-	}
 	else
 	{
 		printf("+");
 	}
 }
 
+static unsigned readNumber(const char *prompt, unsigned current, unsigned maximum)
+{
+    for (;;)
+    {
+        char *text;
+        unsigned value = 0;
+        byte valid = 1;
+        printf("%s (%u)? ", prompt, current);
+        text = readline();
+        if (!text)
+        {
+            stopMotor();
+            exit(1);
+        }
+        if (!*text)
+            return current;
+        while (*text)
+        {
+            if (*text < '0' || *text > '9' || value > maximum / 10 ||
+                (value == maximum / 10 && (unsigned)(*text - '0') > maximum % 10))
+            {
+                valid = 0;
+                break;
+            }
+            value = value * 10 + (*text++ - '0');
+        }
+        if (valid)
+            return value;
+        printf("ENTER 0-%u\n", maximum);
+    }
+}
+
 int
 main()
 {
-	re_ask_drive:
-	printf("DRIVE NUMBER (%d)? ", driveNum);
-	char *response = readline();
-	int n;
-	if (response[0] != '\0')
-	{
-		n = atoi(response);
-		driveNum = (byte)n;
-	}
+    driveNum = (byte)readNumber("DRIVE NUMBER", driveNum, 3);
 
-	if (driveNum<0 || driveNum>3) goto re_ask_drive;
-
-	while (1)
-	{
-		re_ask_delay:
-		n = ((unsigned)fm_timer_hi << 8) | fm_timer_lo;
-		printf("ENTER NEW DELAY (%d)? ", ((unsigned)fm_timer_hi << 8) | fm_timer_lo);
-		response = readline();
-		if (response[0] != '\0')
-		{
-			n = atoi(response);
-
-			if (n!=0)
-			{
-				fm_timer_hi = (byte)(n>>8);
-				fm_timer_lo = (byte)n;
-			}
-			else
-			{
-				stopMotor();
-				break;
-			}
-		}
-
-		if (n<0 || n>4095) goto re_ask_delay;
-
-		re_ask_track:
-		printf("TRACK NUMBER (%d)? ", trackNum);
-		char *response = readline();
-		if (response[0] != '\0')
-		{
-			n = atoi(response);
-			trackNum = (byte)n;
-		}
-
-		if (trackNum<0 || trackNum>40) goto re_ask_track;
+    while (1)
+    {
+        char *response;
+        byte writeTrack;
+        unsigned n;
+        printf("W=FM OVER MFM B=MFM OVER FM\nR=READ Q=QUIT? ");
+        response = readline();
+        if (!response)
+            break;
+        if (*response == 'Q' || *response == 'q')
+            break;
+        writeTrack = *response == 'W' || *response == 'w' || *response == 'B' || *response == 'b';
+        if (writeTrack)
+            reverseMode = *response == 'B' || *response == 'b';
+        if (!writeTrack && *response && *response != 'R' && *response != 'r')
+            continue;
+        if (writeTrack)
+        {
+            n = readNumber("DELAY (0=QUIT)", ((unsigned)fm_timer_hi << 8) | fm_timer_lo, 4095);
+            if (!n)
+                break;
+            fm_timer_hi = (byte)(n >> 8);
+            fm_timer_lo = (byte)n;
+        }
+        if (!writeTrack)
+            reverseMode = (byte)readNumber("REVERSE PATTERN (0/1)", reverseMode, 1);
+        mfmFill = reverseMode ? 0xaa : 0x55;
+        trackNum = (byte)readNumber("TRACK NUMBER", trackNum, 40);
 
 		// go to track zero
 		unsigned long cookie = x_dskcon_init(x_dskcon_nmiService);
@@ -556,23 +659,39 @@ main()
 
 		x_dskcon_shutdown(cookie);
 		
-		formatMFM();
-
-		disableInterrupts();
-		setGIMETimer(0);
-		setupFIRQ();
-		enableInterrupts();
-
-		formatFM();
-
-		disableInterrupts();
-		setGIMETimer(0);
-		stopFIRQ();
-		enableInterrupts();
+        formatStarted = 0;
+        if (writeTrack)
+        {
+            formatStarted = 1;
+            printf("WRITE SELECTED: DRIVE %u TRACK %u\n", driveNum, trackNum);
+            partialAborted = 0;
+            if (reverseMode)
+            {
+                formatFM(0);
+                verifyFMFormat();
+                formatMFM(1);
+            }
+            else
+            {
+                formatMFM(0);
+                verifyMFMFormat();
+                disableInterrupts();
+                setGIMETimer(0);
+                setupFIRQ();
+                enableInterrupts();
+                formatFM(1);
+            }
+            if (!partialAborted)
+            {
+                printf("TIMER ABORT DID NOT FIRE\n");
+                stopMotor();
+                exit(1);
+            }
+        }
 
 		cls(255);
-		printf("DRIVE: %d, TIMER DELAY: %d\n", driveNum, ((unsigned)fm_timer_hi << 8) | fm_timer_lo);
-		printf("TRACK %d SEEN SECTOR STATISTICS\n", trackNum);
+		printf("DRIVE %d %s\n", driveNum, writeTrack ? "WRITE/VERIFY" : "READ ONLY");
+		printf("TRK %u DELAY %u MFM %02X\n", trackNum, ((unsigned)fm_timer_hi << 8) | fm_timer_lo, mfmFill);
 		printf("\n");
 		printf("MFM    123456789111111111\n");
 		printf("SEC #           012345678\n");
@@ -595,9 +714,11 @@ main()
 			fm_buf[i] = 0;
 		}
 
+		memset(&mfmStats, 0, sizeof(mfmStats));
+        memset(&fmStats, 0, sizeof(fmStats));
 		mfm_readSectorAddress(mfm_buf);
 
-		for (i=1; i<20; i++)
+		for (i=1; i<=18; i++)
 		{
 			displaySectorAddress(i, 6, mfm_buf[i]);
 		}
@@ -606,17 +727,32 @@ main()
 
 		fm_readSectorAddress(fm_buf);
 
-		for (i=1; i<20; i++)
+		for (i=1; i<=17; i++)
 		{
 			displaySectorAddress(i, 12, fm_buf[i]);
 		}
 
 		fm_readSector(fm_buf);
 
-		armMotorTimeout(2);
+        locate(0,2);
+        printf("S%02X ID %02X/%02X/%02X/%02X", mfmStats.status,
+            mfmStats.id[0], mfmStats.id[1], mfmStats.id[2], mfmStats.id[3]);
+        locate(0,5);
+        printf("I/O ERR %u BAD ID %u       ", mfmStats.ioErrors, mfmStats.badIds);
+        locate(0,8);
+        printf("S%02X ID %02X/%02X/%02X/%02X", fmStats.status,
+            fmStats.id[0], fmStats.id[1], fmStats.id[2], fmStats.id[3]);
+        locate(0,11);
+        printf("I/O ERR %u BAD ID %u       ", fmStats.ioErrors, fmStats.badIds);
+        locate(0,14);
+        printf("MODE %c FORMAT %c %s STAT %02X", writeTrack ? (reverseMode ? 'B' : 'W') : 'R',
+            formatStarted ? 'Y' : 'N', reverseMode ? "MFM" : "FM",
+            formatStarted ? partialFormatStatus : 0);
+        armMotorTimeout(2);
 
-		locate(0,14);
+		locate(0,15);
 	}
 
+	stopMotor();
 	return 0;
 }

@@ -16,6 +16,10 @@
 #include <cmoc.h>
 
 
+// Set before Write Track: 0 = complete FM track, 1 = timer-aborted FM.
+extern unsigned char fm_partialTrack;
+extern unsigned char fm_partialAborted;
+
 extern unsigned char fm_DCOPC;  /* DSKCON OPERATION CODE 0-3 */
 extern unsigned char fm_DCDRV;  /* DSKCON DRIVE NUMBER 0—3 */
 extern unsigned char fm_DCTRK;  /* DSKCON TRACK NUMBER 0—34 */
